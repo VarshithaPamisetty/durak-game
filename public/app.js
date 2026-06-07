@@ -187,7 +187,6 @@ function initHome() {
 
   const pl = document.getElementById('opt-players');
   const hand = document.getElementById('opt-hand');
-  pl.oninput = () => (document.getElementById('lbl-players').textContent = pl.value);
   hand.oninput = () => (document.getElementById('lbl-hand').textContent = hand.value);
 
   document.getElementById('btn-create').onclick = async () => {
@@ -300,6 +299,14 @@ function renderGame() {
   renderActions(v);
   renderHand(v);
   renderOverlay(v);
+  renderLog(v);
+}
+
+function renderLog(v) {
+  const el = document.getElementById('log');
+  if (!el) return;
+  el.innerHTML = (v.log || []).slice(-6).map((l) => `<div>${escapeHtml(l)}</div>`).join('');
+  el.scrollTop = el.scrollHeight;
 }
 
 function renderTrumpUnder(v) {
@@ -380,7 +387,8 @@ function renderTable(v) {
       wrap.appendChild(d);
       seen.add(pair.defense);
     } else if (amDefender && sel) {
-      const tappable = selJoker ? cardColorC(sel) === cardColorC(pair.attack) : isDefenseSelection(v);
+      const tappable = selJoker ? cardColorC(sel) === cardColorC(pair.attack)
+        : canBeatC(sel, pair.attack, v.trumpSuit, v.deckSize);
       if (tappable) {
         wrap.classList.add('targetable');
         wrap.onclick = () => {
@@ -405,7 +413,9 @@ function renderTable(v) {
   } else if (amDefender && selJoker) {
     msg.textContent = 'Tap a matching-colour card — the rest go to the previous player';
   } else if (amDefender && sel) {
-    msg.textContent = 'Tap an attacking card to beat it';
+    msg.textContent = (v.yourActions || []).includes('transfer')
+      ? 'Tap a card to beat it — or press Transfer'
+      : 'Tap an attacking card to beat it';
   } else if (v.toActId && v.toActId !== v.you) {
     msg.textContent = `Waiting for ${nameOf(v, v.toActId)}…`;
   } else { msg.textContent = ''; }
@@ -591,6 +601,22 @@ function renderOverlay(v) {
 }
 
 // ---------- card rendering ----------
+const RANKS_BY_DECK = {
+  52: ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'],
+  36: ['6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'],
+  24: ['9', '10', 'J', 'Q', 'K', 'A'],
+  20: ['10', 'J', 'Q', 'K', 'A'],
+};
+function canBeatC(attack, defense, trumpSuit, deckSize) {
+  if (isJokerC(defense)) return cardColorC(defense) === cardColorC(attack);
+  if (isJokerC(attack)) return false;
+  const ranks = RANKS_BY_DECK[deckSize] || RANKS_BY_DECK[36];
+  const A = parseCard(attack), D = parseCard(defense);
+  const aT = A.suit === trumpSuit, dT = D.suit === trumpSuit;
+  if (aT) return dT && ranks.indexOf(D.rank) > ranks.indexOf(A.rank);
+  if (dT) return true;
+  return D.suit === A.suit && ranks.indexOf(D.rank) > ranks.indexOf(A.rank);
+}
 function isJokerC(id) { return id === 'RJ' || id === 'BJ'; }
 function cardColorC(id) {
   if (id === 'RJ') return 'red';

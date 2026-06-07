@@ -29,7 +29,7 @@ const wss = new WebSocketServer({ server });
  */
 const rooms = new Map();
 const EMPTY_ROOM_TTL = 1000 * 60 * 10; // keep a disconnected room alive 10 min for reconnects
-const BOT_DELAY = Number(process.env.BOT_DELAY) || 850; // ms between bot moves
+const BOT_DELAY = Number(process.env.BOT_DELAY) || 1500; // ms between bot moves
 
 function makeRoomCode() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no confusing chars
@@ -167,8 +167,8 @@ function attach(ws, room, playerId) {
 
 function onCreate(ws, msg) {
   const name = (msg.name || '').trim().slice(0, 20) || 'Player';
-  const maxPlayers = clamp(parseInt(msg.maxPlayers, 10) || 4, 2, 10);
-  const handSize = clamp(parseInt(msg.handSize, 10) || 6, 1, 8);
+  const maxPlayers = clamp(parseInt(msg.maxPlayers, 10) || 4, 2, 20);
+  const handSize = clamp(parseInt(msg.handSize, 10) || 6, 1, 6);
   let deckSize = parseInt(msg.deckSize, 10) || 36;
   if (![20, 24, 36, 52].includes(deckSize)) deckSize = 36;
 

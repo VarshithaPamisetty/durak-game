@@ -116,6 +116,41 @@ test('canBeat colour rules for jokers', () => {
   assert.equal(canBeat('6C', RED_JOKER, g), false);
 });
 
+test('bout does not auto-end: each neighbour must press Done', () => {
+  const g = createGame(P(3), { deckSize: 36, handSize: 6 });
+  setRoles(g, 1); // defender p1, primary p0, secondary p2
+  g.trumpSuit = 'S';
+  g.players[0].hand = ['7H', 'KD'];
+  g.players[1].hand = ['9H', '9D'];
+  g.players[2].hand = ['KC', 'KS'];
+  g.deck = ['2H', '2D', '2C', '2S', '3H', '3D'];
+  assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['7H'] }).ok);
+  assert.ok(applyAction(g, 'p1', { type: 'defend', attackIndex: 0, card: '9H' }).ok);
+  // primary gets the turn back (chance to throw more) — NOT auto-resolved
+  assert.ok(legalActions(g, 'p0').includes('done'));
+  assert.equal(g.table.length, 1);
+  assert.ok(applyAction(g, 'p0', { type: 'done' }).ok); // yield to secondary
+  assert.ok(legalActions(g, 'p2').includes('done'));
+  assert.equal(g.table.length, 1);
+  assert.ok(applyAction(g, 'p2', { type: 'done' }).ok); // now it resolves
+  assert.equal(g.table.length, 0);
+});
+
+test('trump of same rank can defend OR transfer (player choice)', () => {
+  const g = createGame(P(3), { deckSize: 36, handSize: 6 });
+  setRoles(g, 1);
+  g.trumpSuit = 'D'; // diamonds are trump
+  g.players[0].hand = ['7C'];
+  g.players[1].hand = ['7D', '9S']; // 7D is a trump of the same rank as the attack
+  g.players[2].hand = ['KC', 'KS'];
+  g.deck = ['2H', '2C', '3H', '3C', '4H', '4C'];
+  assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['7C'] }).ok);
+  const acts = legalActions(g, 'p1');
+  assert.ok(acts.includes('transfer'), 'can transfer with 7D');
+  assert.ok(acts.includes('defend'), 'can also choose to defend');
+  assert.ok(_internals.canBeat('7C', '7D', g), 'trump 7D beats 7C');
+});
+
 test('viewFor hides hands and exposes takeMode/turn info', () => {
   const g = createGame(P(3), { deckSize: 36, handSize: 6 });
   const v = viewFor(g, 'p0');

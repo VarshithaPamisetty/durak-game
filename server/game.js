@@ -433,7 +433,7 @@ function normalizeTurn(state) {
   while (guard++ < 40) {
     if (state.takeMode) {
       const holder = state.priorityIndex;
-      if (hasAddable(state, holder, true)) return;
+      if (state.players[holder].hand.length > 0) return; // wait for explicit Done
       if (holder === state.primaryIndex && state.secondaryIndex !== -1) { state.priorityIndex = state.secondaryIndex; continue; }
       finalizeTake(state);
       if (state.phase !== 'playing') return;
@@ -452,8 +452,9 @@ function normalizeTurn(state) {
     if (undefendedCount(state) > 0) return; // defender's turn
     // fully defended
     if (state.jokerUsed) return; // defender must Finish (push the rest)
+    // Wait for the priority attacker to add or press Done — never auto-resolve.
     const holder = state.priorityIndex;
-    if (hasAddable(state, holder, false)) return;
+    if (state.players[holder].hand.length > 0) return;
     if (holder === state.primaryIndex && state.secondaryIndex !== -1) { state.priorityIndex = state.secondaryIndex; continue; }
     resolveDefense(state);
     if (state.phase !== 'playing') return;
@@ -465,6 +466,24 @@ function endBout(state, defenderTook) {
   refill(state);
   updateOut(state);
   if (activeCount(state) <= 1) return;
+
+  // Anti-stall guard: if the talon is empty and many bouts pass with no card
+  // discarded and nobody eliminated, end the game (durak = most cards held).
+  const active = activeCount(state);
+  if (state.discardCount > (state._lastDiscard ?? -1) || active < (state._lastActive ?? Infinity)) {
+    state._lastDiscard = state.discardCount; state._lastActive = active; state._stale = 0;
+  } else if (state.deck.length === 0) {
+    state._stale = (state._stale || 0) + 1;
+    if (state._stale > 60) {
+      let worst = null;
+      for (const p of state.players) if (!p.out && (!worst || p.hand.length > worst.hand.length)) worst = p;
+      state.phase = 'finished';
+      state.loserId = worst ? worst.id : null;
+      state.log.push(worst ? `Stalemate — ${worst.name} holds the most cards (Durak).` : 'Stalemate — draw.');
+      return;
+    }
+  }
+
   let newAttacker;
   if (defenderTook) newAttacker = nextActiveIndex(state, state.defenderIndex);
   else newAttacker = state.players[state.defenderIndex].out ? nextActiveIndex(state, state.defenderIndex) : state.defenderIndex;
