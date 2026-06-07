@@ -67,6 +67,7 @@ export function createGame(players, options = {}) {
     secondaryIndex: -1,
     priorityIndex: 0,
     takeMode: false,
+    jokerUsed: false,
     noPlay: 0,
     phase: 'playing',
     loserId: null,
@@ -134,6 +135,7 @@ function setRoles(state) {
   const sec = nextActiveIndex(state, state.defenderIndex);
   state.secondaryIndex = sec === state.primaryIndex ? -1 : sec;
   state.priorityIndex = state.primaryIndex;
+  state.jokerUsed = false;
 }
 
 function indexOfId(state, id) { return state.players.findIndex((p) => p.id === id); }
@@ -225,8 +227,10 @@ export function legalActions(state, id) {
       const acts = ['defend', 'take'];
       if (canTransfer(state, id)) acts.push('transfer');
       if (canJokerDefend(state, id)) acts.push('jokerdefend');
+      if (state.jokerUsed) acts.push('done'); // finish: push the rest to the previous player
       return acts;
     }
+    if (state.jokerUsed && state.table.length > 0) return ['done'];
     return [];
   }
 
@@ -319,7 +323,9 @@ function doDefend(state, id, action) {
   return { ok: true };
 }
 
-// Joker defends one card; all other undefended cards go to the previous player.
+// Joker defends one matching-colour card. The bout does NOT end yet — the defender
+// may beat/joker more cards, and then presses Done to push the rest to the previous
+// player and end the bout.
 function doJokerDefend(state, id, action) {
   const idx = indexOfId(state, id);
   if (idx !== state.defenderIndex || state.takeMode) return fail('Cannot defend now.');
@@ -333,19 +339,21 @@ function doJokerDefend(state, id, action) {
 
   p.hand.splice(p.hand.indexOf(card), 1);
   pair.defense = card;
+  state.jokerUsed = true;
+  state.log.push(`${p.name} jokers ${fmt(pair.attack)}`);
+  return { ok: true };
+}
 
-  // Push remaining undefended cards to the previous player (the left attacker).
+// Defender finishes after using a joker: undefended cards go to the previous player.
+function finalizeJoker(state) {
   const recipient = state.players[state.primaryIndex];
   const pushed = [];
-  for (const pr of state.table) {
-    if (!pr.defense) { recipient.hand.push(pr.attack); pushed.push(pr.attack); }
-  }
+  for (const pr of state.table) { if (!pr.defense) { recipient.hand.push(pr.attack); pushed.push(pr.attack); } }
   state.discardCount += state.table.filter((pr) => pr.defense).reduce((nn) => nn + 2, 0);
   state.table = [];
   sortHands(state);
-  state.log.push(`${p.name} jokers ${fmt(pair.attack)}${pushed.length ? ` — ${pushed.length} card(s) to ${recipient.name}` : ''}`);
+  state.log.push(`${state.players[state.defenderIndex].name} finishes${pushed.length ? ` — ${pushed.length} card(s) to ${recipient.name}` : ''}`);
   endBout(state, false);
-  return { ok: true };
 }
 
 function doTransfer(state, id, action) {
@@ -394,6 +402,11 @@ function finalizeTake(state) {
 
 function doDone(state, id) {
   const idx = indexOfId(state, id);
+  if (idx === state.defenderIndex && !state.takeMode) {
+    if (!state.jokerUsed) return fail('Nothing to finish.');
+    finalizeJoker(state);
+    return { ok: true };
+  }
   if (idx !== state.priorityIndex) return fail('It is not your turn.');
   if (state.takeMode) {
     if (state.table.length === 0) return fail('Nothing here.');
@@ -438,6 +451,7 @@ function normalizeTurn(state) {
     }
     if (undefendedCount(state) > 0) return; // defender's turn
     // fully defended
+    if (state.jokerUsed) return; // defender must Finish (push the rest)
     const holder = state.priorityIndex;
     if (hasAddable(state, holder, false)) return;
     if (holder === state.primaryIndex && state.secondaryIndex !== -1) { state.priorityIndex = state.secondaryIndex; continue; }
@@ -499,6 +513,7 @@ export function viewFor(state, id) {
   if (state.phase !== 'playing') toActId = null;
   else if (state.takeMode) toActId = state.players[state.priorityIndex]?.id;
   else if (undef > 0) toActId = state.players[state.defenderIndex].id;
+  else if (state.jokerUsed && state.table.length > 0) toActId = state.players[state.defenderIndex].id;
   else if (state.table.length === 0) { const o = effectiveOpener(state); toActId = o >= 0 ? state.players[o].id : null; }
   else toActId = state.players[state.priorityIndex]?.id;
 
@@ -508,6 +523,7 @@ export function viewFor(state, id) {
     table: state.table.map((p) => ({ attack: p.attack, defense: p.defense })),
     phase: state.phase, loserId: state.loserId,
     takeMode: state.takeMode,
+    jokerUsed: state.jokerUsed,
     defenderId: state.players[state.defenderIndex]?.id,
     primaryId: state.players[state.primaryIndex]?.id,
     secondaryId: state.secondaryIndex >= 0 ? state.players[state.secondaryIndex]?.id : null,

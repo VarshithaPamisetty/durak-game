@@ -426,7 +426,8 @@ function renderStatus(v) {
     else if (v.you === v.toActId) txt = 'Load the taker — add a card or Done';
     else txt = `${nameOf(v, v.defenderId)} is taking…`;
   } else if (v.you === v.defenderId) {
-    txt = (v.yourActions || []).includes('jokerdefend')
+    if (v.jokerUsed) txt = 'Joker played — beat more, or Finish to push the rest';
+    else txt = (v.yourActions || []).includes('jokerdefend')
       ? 'Defending — beat a card, or tap a Joker then a matching card'
       : 'You are defending';
   } else if (v.you === v.toActId) {
@@ -462,7 +463,8 @@ function renderActions(v) {
     });
   }
   if (acts.includes('done')) {
-    addBtn(box, 'Done', 'act-primary', false, () => {
+    const amDef = v.you === v.defenderId && !v.takeMode;
+    addBtn(box, amDef ? 'Finish — push rest' : 'Done', amDef ? 'act-warn' : 'act-primary', false, () => {
       send('action', { action: { type: 'done' } }); sound('beat');
     });
   }

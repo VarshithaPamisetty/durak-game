@@ -21,7 +21,7 @@ export function chooseBotAction(state, id) {
   // Defender (not taking)
   if (idx === state.defenderIndex && !state.takeMode) {
     const undef = state.table.map((pair, i) => ({ pair, i })).filter((x) => !x.pair.defense);
-    if (undef.length === 0) return null;
+    if (undef.length === 0) return actions.includes('done') ? { type: 'done' } : null;
     // Try to beat the cheapest undefended card with a normal card.
     let best = null;
     for (const { pair, i } of undef) {
@@ -33,7 +33,7 @@ export function chooseBotAction(state, id) {
     }
     if (best) return { type: 'defend', attackIndex: best.attackIndex, card: best.card };
 
-    // Can't beat normally — use a joker to defend one and push the rest, if possible.
+    // Can't beat normally — use a joker to defend one (colour match), if possible.
     if (actions.includes('jokerdefend')) {
       const jokers = me.hand.filter(isJoker);
       for (const { pair, i } of undef) {
@@ -41,6 +41,8 @@ export function chooseBotAction(state, id) {
         if (j) return { type: 'jokerdefend', attackIndex: i, card: j };
       }
     }
+    // Already used a joker and can't beat the rest → finish, pushing the rest back.
+    if (actions.includes('done')) return { type: 'done' };
     return { type: 'take' };
   }
 

@@ -44,23 +44,28 @@ test('jokers cannot attack', () => {
   assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['7H'] }).ok);
 });
 
-test('joker defends by colour and pushes the rest to the previous player', () => {
+test('joker defends one, then Done pushes the rest to the previous player', () => {
   const g = createGame(P(3), { deckSize: 36, handSize: 6 });
   setRoles(g, 1); // defender p1, primary p0, secondary p2
   g.trumpSuit = 'S';
   g.players[0].hand = ['6C', '6D']; // opener
   g.players[1].hand = [BLACK_JOKER, 'AS']; // defender holds black joker
   g.players[2].hand = ['6S', '7C', '8C'];
-  g.deck = ['2H', '2D', '2C', '2S', '3H', '3D']; // talon so nobody goes out
-  // opener attacks with two 6s (6C black, 6D red)
+  g.deck = ['2H', '2D', '2C', '2S', '3H', '3D'];
   assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['6C', '6D'] }).ok);
   assert.equal(g.table.length, 2);
   assert.ok(legalActions(g, 'p1').includes('jokerdefend'));
-  // black joker can only beat the black 6C
-  const beforeP0 = g.players[0].hand.length;
+  // black joker beats the black 6C, but does NOT end the bout yet
   assert.ok(applyAction(g, 'p1', { type: 'jokerdefend', attackIndex: 0, card: BLACK_JOKER }).ok);
-  // the undefended 6D was pushed to the previous player (p0)
-  assert.ok(g.players[0].hand.includes('6D'), 'pushed card went to previous player');
+  assert.equal(g.table.length, 2, 'bout still going after joker');
+  assert.equal(g.jokerUsed, true);
+  assert.ok(legalActions(g, 'p1').includes('done'), 'defender can now finish');
+  // attackers cannot act while a joker is in play
+  assert.deepEqual(legalActions(g, 'p2'), []);
+  const beforeP0 = g.players[0].hand.length;
+  // Done pushes the still-undefended 6D to the previous player (p0) and ends the bout
+  assert.ok(applyAction(g, 'p1', { type: 'done' }).ok);
+  assert.ok(g.players[0].hand.includes('6D'), 'remaining card pushed to previous player');
   assert.equal(g.table.length, 0, 'bout ended');
 });
 
