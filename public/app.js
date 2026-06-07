@@ -68,6 +68,7 @@ function handle(msg) {
       break;
     case 'state':
       SS.room = msg.room; SS.view = msg.view;
+      pruneSelection();
       showScreen('game'); renderGame();
       break;
     case 'session-invalid':
@@ -270,6 +271,14 @@ function renderLobby() {
     : 'Waiting for the host to start…';
 }
 
+// Keep only cards we still actually hold (prevents "you don't hold that card").
+function pruneSelection() {
+  const me = SS.view && SS.view.players.find((p) => p.id === SS.view.you);
+  if (!me || !me.hand) { SS.selected.clear(); return; }
+  const hand = new Set(me.hand);
+  for (const c of [...SS.selected]) if (!hand.has(c)) SS.selected.delete(c);
+}
+
 // ---------- game ----------
 function renderGame() {
   const v = SS.view;
@@ -277,8 +286,8 @@ function renderGame() {
 
   document.getElementById('game-code').textContent = SS.code;
   const tb = document.getElementById('trump-badge');
-  tb.textContent = SUIT_SYMBOL[v.trumpSuit];
   tb.className = 'trump-badge ' + (RED_SUITS.has(v.trumpSuit) ? 'red' : 'black');
+  document.getElementById('tb-suit').textContent = SUIT_SYMBOL[v.trumpSuit];
 
   document.getElementById('deck-count').textContent = v.deckCount;
   document.getElementById('discard-count').textContent = v.discardCount;
@@ -389,9 +398,10 @@ function isDefenseSelection(v) {
 function renderStatus(v) {
   let txt = '';
   if (v.phase !== 'playing') txt = '';
-  else if (v.you === v.defenderId) txt = '🛡 You are defending';
-  else if (v.you === v.attackerId) txt = '⚔ You are attacking';
-  else txt = `${nameOf(v, v.attackerId)} ⚔ → 🛡 ${nameOf(v, v.defenderId)}`;
+  else if (v.you === v.defenderId) txt = 'You are defending';
+  else if (v.you === v.attackerId) txt = 'Your attack';
+  else if (v.defenderId === v.you) txt = '';
+  else txt = `${nameOf(v, v.attackerId)} attacks ${nameOf(v, v.defenderId)}`;
   document.getElementById('status').textContent = txt;
 }
 
@@ -403,22 +413,22 @@ function renderActions(v) {
 
   if (acts.includes('attack')) {
     const isOpen = v.table.length === 0;
-    addBtn(box, isOpen ? '⚔ Attack' : '➕ Throw in', 'act-primary', sel.length === 0, () => {
+    addBtn(box, isOpen ? 'Attack' : 'Add card', 'act-primary', sel.length === 0, () => {
       send('action', { action: { type: 'attack', cards: sel } }); sound('play');
     });
   }
   if (acts.includes('transfer')) {
-    addBtn(box, '⇄ Transfer', 'act-warn', sel.length === 0, () => {
+    addBtn(box, 'Transfer', 'act-warn', sel.length === 0, () => {
       send('action', { action: { type: 'transfer', cards: sel } }); sound('play');
     });
   }
   if (acts.includes('take')) {
-    addBtn(box, '🤲 Take cards', 'act-danger', false, () => {
+    addBtn(box, 'Take', 'act-danger', false, () => {
       send('action', { action: { type: 'take' } }); sound('take');
     });
   }
   if (acts.includes('done')) {
-    addBtn(box, '✓ Done', 'act-primary', false, () => {
+    addBtn(box, 'Pass', 'act-primary', false, () => {
       send('action', { action: { type: 'done' } }); sound('beat');
     });
   }
@@ -445,32 +455,55 @@ function renderHand(v) {
   const animate = sig !== SS.dealtSig;
   SS.dealtSig = sig;
 
+  // Determine which ranks are currently "active" so we can dim non-playable cards.
+  const selRank = SS.selected.size ? parseCard([...SS.selected][0]).rank : null;
+  const amDefender = v.you === v.defenderId;
+  const defending = amDefender && v.table.some((p) => !p.defense);
+
+  const n = me.hand.length;
+  const spread = Math.min(4, 26 / Math.max(n, 1)); // degrees between cards
+  const mid = (n - 1) / 2;
+
   hand.innerHTML = '';
   me.hand.forEach((card, i) => {
     const el = cardEl(card);
-    if (parseCard(card).suit === v.trumpSuit) el.classList.add('trumpcard');
+    const { suit, rank } = parseCard(card);
+    if (suit === v.trumpSuit) el.classList.add('trumpcard');
+
+    // gentle fan
+    const off = i - mid;
+    el.style.setProperty('--rot', (off * spread).toFixed(2) + 'deg');
+    el.style.setProperty('--ty', (Math.abs(off) * Math.abs(off) * 1.1).toFixed(1) + 'px');
+
     if (SS.selected.has(card)) el.classList.add('selected');
-    if (animate) el.style.animationDelay = (i * 0.04) + 's';
-    else el.style.animation = 'none';
+    // Dim cards that can't combine with the current selection (attacking/throwing same-rank).
+    if (selRank && !defending && rank !== selRank && !SS.selected.has(card)) el.classList.add('dimmed');
+
+    if (animate) { el.classList.add('anim'); el.style.animationDelay = (i * 0.045) + 's'; }
     el.onclick = () => toggleSelect(card, v);
     hand.appendChild(el);
   });
-  if (animate && me.hand.length) sound('deal');
+  if (animate && n) sound('deal');
 }
 
 function toggleSelect(card, v) {
+  if (SS.selected.has(card)) { SS.selected.delete(card); renderGame(); return; }
+
   const amDefender = v.you === v.defenderId;
-  if (SS.selected.has(card)) {
-    SS.selected.delete(card);
+  const rank = parseCard(card).rank;
+
+  if (amDefender && v.table.some((p) => !p.defense)) {
+    // Defending: one card beats one attack. Allow multi-select only for a transfer
+    // (all selected must match the attack rank).
+    const transferRank = v.yourActions.includes('transfer') && rank === parseCard(v.table[0].attack).rank;
+    if (!transferRank) SS.selected.clear();
+    else if ([...SS.selected].some((c) => parseCard(c).rank !== rank)) SS.selected.clear();
   } else {
-    // Defender beating: single-card selection unless it's a transfer-rank pick.
-    if (amDefender && v.table.some((p) => !p.defense)) {
-      const transferRank = v.yourActions.includes('transfer') && parseCard(card).rank === parseCard(v.table[0].attack).rank;
-      if (!transferRank) SS.selected.clear();
-    }
-    SS.selected.add(card);
-    sound('select');
+    // Attacking / throwing in: all selected cards must share one rank.
+    if ([...SS.selected].some((c) => parseCard(c).rank !== rank)) SS.selected.clear();
   }
+  SS.selected.add(card);
+  sound('select');
   renderGame();
 }
 
@@ -483,13 +516,16 @@ function renderOverlay(v) {
   const text = document.getElementById('overlay-text');
 
   if (v.loserId === v.you) {
-    emoji.textContent = '🤡'; title.textContent = 'You are the Durak!'; text.textContent = 'Better luck next round.';
+    emoji.textContent = '✖'; emoji.style.color = '#c62b3c';
+    title.textContent = 'You are the Durak'; text.textContent = 'Last one holding cards. Try again.';
     if (!SS.endShown) sound('lose');
   } else if (v.loserId) {
-    emoji.textContent = '🏆'; title.textContent = `${nameOf(v, v.loserId)} is the Durak!`; text.textContent = 'You escaped — well played.';
+    emoji.textContent = '♛'; emoji.style.color = 'var(--gold)';
+    title.textContent = 'You win'; text.textContent = `${nameOf(v, v.loserId)} is the Durak.`;
     if (!SS.endShown) { sound('win'); launchConfetti(); }
   } else {
-    emoji.textContent = '🤝'; title.textContent = 'Draw — no Durak!'; text.textContent = 'Nobody lost this round.';
+    emoji.textContent = '='; emoji.style.color = 'var(--muted)';
+    title.textContent = 'Draw'; text.textContent = 'No Durak this round.';
   }
   SS.endShown = true;
   const isHost = SS.room && SS.playerId === SS.room.hostId;
@@ -518,10 +554,11 @@ function launchConfetti() {
   cv.classList.add('active');
   const ctx = cv.getContext('2d');
   cv.width = innerWidth; cv.height = innerHeight;
-  const N = 140;
+  const N = 90;
+  const COLORS = ['#f0cf76', '#c9a23f', '#f4f5f0', '#e8d9a0', '#ffffff'];
   const parts = Array.from({ length: N }, () => ({
     x: Math.random() * cv.width, y: -20 - Math.random() * cv.height,
-    r: 4 + Math.random() * 6, c: AVATAR_COLORS[(Math.random() * AVATAR_COLORS.length) | 0],
+    r: 4 + Math.random() * 5, c: COLORS[(Math.random() * COLORS.length) | 0],
     vy: 2 + Math.random() * 3, vx: -1 + Math.random() * 2, rot: Math.random() * 6, vr: -0.2 + Math.random() * 0.4,
   }));
   let frames = 0;
