@@ -60,21 +60,21 @@ function broadcastRoom(room) {
 function scheduleBots(room) {
   if (!room.game || room.game.phase !== 'playing') return;
   if (room.botTimer) return; // a tick is already pending
-  const hasMove = room.players.some((p) => p.isBot && chooseBotAction(room.game, p.id));
-  if (!hasMove) return;
+  const bot = room.players.find((p) => p.isBot && chooseBotAction(room.game, p.id));
+  if (!bot) return;
+  const act = chooseBotAction(room.game, bot.id);
+  // Confirmations are quick; real plays (attack/defend/take) are slower so they're visible.
+  const delay = act && act.type === 'done' ? Math.min(550, BOT_DELAY) : BOT_DELAY;
   room.botTimer = setTimeout(() => {
     room.botTimer = null;
     if (!room.game || room.game.phase !== 'playing') return;
-    const bot = room.players.find((p) => p.isBot && chooseBotAction(room.game, p.id));
-    if (bot) {
-      const act = chooseBotAction(room.game, bot.id);
-      if (act) {
-        const r = applyAction(room.game, bot.id, act);
-        if (r.ok) broadcastRoom(room);
-      }
+    const b = room.players.find((p) => p.isBot && chooseBotAction(room.game, p.id));
+    if (b) {
+      const a = chooseBotAction(room.game, b.id);
+      if (a) { const r = applyAction(room.game, b.id, a); if (r.ok) broadcastRoom(room); }
     }
-    scheduleBots(room); // keep going until no bot has a move
-  }, BOT_DELAY);
+    scheduleBots(room);
+  }, delay);
 }
 
 function roomSummary(room) {

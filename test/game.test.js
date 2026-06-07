@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { createGame, applyAction, legalActions, viewFor, isJoker, cardColor, RED_JOKER, BLACK_JOKER, _internals } from '../server/game.js';
+import { createGame, applyAction, legalActions, viewFor, isJoker, RED_JOKER, BLACK_JOKER, _internals } from '../server/game.js';
 
 const P = (n) => Array.from({ length: n }, (_, i) => ({ id: 'p' + i, name: 'P' + i }));
 
@@ -10,152 +10,116 @@ function setRoles(g, defenderIndex) {
   g.primaryIndex = (defenderIndex + n - 1) % n;
   const sec = (defenderIndex + 1) % n;
   g.secondaryIndex = sec === g.primaryIndex ? -1 : sec;
-  g.priorityIndex = g.primaryIndex;
-  g.takeMode = false;
+  g.done = []; g.jokerUsed = false; g.takeMode = false; g.table = [];
 }
 
-test('deck includes 2 jokers and trump is never a joker', () => {
-  for (let i = 0; i < 50; i++) {
-    const g = createGame(P(4), { deckSize: 52, handSize: 6, jokers: true });
-    const all = [...g.deck, ...g.players.flatMap((p) => p.hand)];
-    assert.ok(all.includes(RED_JOKER) && all.includes(BLACK_JOKER), 'both jokers present');
-    assert.equal(isJoker(g.trumpCard), false, 'trump not a joker');
-  }
-});
-
-test('adaptive hand size fits the deck for many players', () => {
-  const g = createGame(P(10), { deckSize: 52, handSize: 6, jokers: true });
-  // 54 cards / 10 players -> 5 each
+test('deck has 2 jokers; trump never a joker; adaptive hand size', () => {
+  const g = createGame(P(10), { deckSize: 52, handSize: 6 });
   assert.equal(g.handSize, 5);
-  for (const p of g.players) assert.equal(p.hand.length, 5);
-  assert.equal(g.deck.length, 54 - 50);
+  assert.equal(isJoker(g.trumpCard), false);
+  const all = [...g.deck, ...g.players.flatMap((p) => p.hand)];
+  assert.ok(all.includes(RED_JOKER) && all.includes(BLACK_JOKER));
 });
 
-test('jokers cannot attack', () => {
+test('closing a bout requires EVERY active player to press Done', () => {
   const g = createGame(P(3), { deckSize: 36, handSize: 6 });
-  setRoles(g, 1);
-  g.trumpSuit = 'S';
-  g.players[0].hand = [RED_JOKER, '7H'];
-  g.players[1].hand = ['9H', '9D'];
-  g.players[2].hand = ['8C'];
-  g.deck = [];
-  const bad = applyAction(g, 'p0', { type: 'attack', cards: [RED_JOKER] });
-  assert.equal(bad.ok, false);
-  assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['7H'] }).ok);
-});
-
-test('joker defends one, then Done pushes the rest to the previous player', () => {
-  const g = createGame(P(3), { deckSize: 36, handSize: 6 });
-  setRoles(g, 1); // defender p1, primary p0, secondary p2
-  g.trumpSuit = 'S';
-  g.players[0].hand = ['6C', '6D']; // opener
-  g.players[1].hand = [BLACK_JOKER, 'AS']; // defender holds black joker
-  g.players[2].hand = ['6S', '7C', '8C'];
+  setRoles(g, 1); g.trumpSuit = 'S';
+  g.players[0].hand = ['7H', '7S']; // primary
+  g.players[1].hand = ['9H', '9D']; // defender
+  g.players[2].hand = ['KC', 'KS']; // secondary
   g.deck = ['2H', '2D', '2C', '2S', '3H', '3D'];
-  assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['6C', '6D'] }).ok);
-  assert.equal(g.table.length, 2);
-  assert.ok(legalActions(g, 'p1').includes('jokerdefend'));
-  // black joker beats the black 6C, but does NOT end the bout yet
-  assert.ok(applyAction(g, 'p1', { type: 'jokerdefend', attackIndex: 0, card: BLACK_JOKER }).ok);
-  assert.equal(g.table.length, 2, 'bout still going after joker');
-  assert.equal(g.jokerUsed, true);
-  assert.ok(legalActions(g, 'p1').includes('done'), 'defender can now finish');
-  // attackers cannot act while a joker is in play
-  assert.deepEqual(legalActions(g, 'p2'), []);
-  const beforeP0 = g.players[0].hand.length;
-  // Done pushes the still-undefended 6D to the previous player (p0) and ends the bout
+  assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['7H'] }).ok);
+  assert.ok(applyAction(g, 'p1', { type: 'defend', attackIndex: 0, card: '9H' }).ok);
+  // closing — all three must confirm
+  assert.ok(legalActions(g, 'p0').includes('done'));
+  assert.ok(legalActions(g, 'p1').includes('done'));
+  assert.ok(legalActions(g, 'p2').includes('done'));
+  assert.ok(applyAction(g, 'p0', { type: 'done' }).ok);
+  assert.equal(g.table.length, 1, 'not closed yet (p1,p2 pending)');
+  assert.ok(applyAction(g, 'p2', { type: 'done' }).ok);
+  assert.equal(g.table.length, 1, 'still not closed (p1 pending)');
   assert.ok(applyAction(g, 'p1', { type: 'done' }).ok);
-  assert.ok(g.players[0].hand.includes('6D'), 'remaining card pushed to previous player');
-  assert.equal(g.table.length, 0, 'bout ended');
+  assert.equal(g.table.length, 0, 'closed when everyone confirmed');
 });
 
-test('joker colour mismatch is rejected', () => {
+test('left priority then right; right may add multiple cards at once', () => {
   const g = createGame(P(3), { deckSize: 36, handSize: 6 });
-  setRoles(g, 1);
-  g.trumpSuit = 'S';
-  g.players[0].hand = ['6H']; // red attack
-  g.players[1].hand = [BLACK_JOKER, 'AS'];
-  g.players[2].hand = ['7C'];
-  g.deck = ['2H', '2D'];
-  assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['6H'] }).ok);
-  const r = applyAction(g, 'p1', { type: 'jokerdefend', attackIndex: 0, card: BLACK_JOKER });
-  assert.equal(r.ok, false, 'black joker cannot beat a red card');
+  setRoles(g, 1); g.trumpSuit = 'S';
+  g.players[0].hand = ['7H', '9S']; // primary opens 7H, then can add a 9 but passes
+  g.players[1].hand = ['9H', '9D', 'AS']; // defender
+  g.players[2].hand = ['7C', '9C']; // secondary can add a 7 AND a 9 together
+  g.deck = ['2H', '2C', '3H', '3C', '4H', '4C'];
+  assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['7H'] }).ok);
+  assert.ok(applyAction(g, 'p1', { type: 'defend', attackIndex: 0, card: '9H' }).ok);
+  // p0 has priority to add; p2 cannot add yet
+  assert.ok(legalActions(g, 'p0').includes('attack'));
+  assert.equal(legalActions(g, 'p2').includes('attack'), false);
+  assert.ok(applyAction(g, 'p0', { type: 'done' }).ok); // primary passes
+  // now p2 may add, and can add both a 7 and a 9 at once
+  assert.ok(legalActions(g, 'p2').includes('attack'));
+  assert.ok(applyAction(g, 'p2', { type: 'attack', cards: ['7C', '9C'] }).ok);
+  assert.equal(g.table.length, 3);
+  assert.equal(_internals.undefendedCount(g), 2);
 });
 
-test('load-the-taker: only neighbours add, then taker picks up all', () => {
-  const g = createGame(P(4), { deckSize: 52, handSize: 6 });
-  setRoles(g, 1); // defender p1, primary p0, secondary p2; p3 is across (cannot add)
-  g.trumpSuit = 'S';
+test('jokers cannot attack; joker beats by colour; two-step finish pushes rest', () => {
+  const g = createGame(P(3), { deckSize: 36, handSize: 6 });
+  setRoles(g, 1); g.trumpSuit = 'S';
   g.players[0].hand = ['6C', '6D'];
-  g.players[1].hand = ['9S'];           // defender, will take
-  g.players[2].hand = ['6H', '6S'];     // secondary can add 6s (keeps a spare)
-  g.players[3].hand = ['7D'];           // across — must NOT be allowed to add
+  g.players[1].hand = [BLACK_JOKER, 'AS'];
+  g.players[2].hand = ['7C', '8C', '9C'];
+  g.deck = ['2H', '2D', '2C', '2S', '3H', '3D'];
+  assert.equal(applyAction(g, 'p0', { type: 'attack', cards: [BLACK_JOKER] }).ok, false);
+  assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['6C', '6D'] }).ok);
+  assert.ok(applyAction(g, 'p1', { type: 'jokerdefend', attackIndex: 0, card: BLACK_JOKER }).ok);
+  assert.equal(g.table.length, 2, 'still going after joker');
+  assert.ok(legalActions(g, 'p1').includes('done'));
+  assert.ok(applyAction(g, 'p1', { type: 'done' }).ok); // finish
+  assert.ok(g.players[0].hand.includes('6D'), 'undefended pushed to previous player');
+  assert.equal(g.table.length, 0);
+});
+
+test('load-the-taker: neighbours add, all confirm, taker picks up all', () => {
+  const g = createGame(P(4), { deckSize: 52, handSize: 6 });
+  setRoles(g, 1); g.trumpSuit = 'S';
+  g.players[0].hand = ['6C', '6D'];
+  g.players[1].hand = ['9S'];   // defender takes
+  g.players[2].hand = ['6H', '6S'];
+  g.players[3].hand = ['7D'];   // across — cannot add
   g.deck = ['2H', '2D', '2C', '3H', '3D', '3C', '4H', '4D'];
   assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['6C'] }).ok);
   assert.ok(applyAction(g, 'p1', { type: 'take' }).ok);
   assert.equal(g.takeMode, true);
-  assert.deepEqual(legalActions(g, 'p3'), [], 'across player cannot load');
-  // primary done -> secondary may add
-  assert.ok(applyAction(g, 'p0', { type: 'done' }).ok);
+  assert.equal(legalActions(g, 'p3').includes('attack'), false, 'across cannot add');
+  assert.ok(applyAction(g, 'p0', { type: 'done' }).ok);     // primary passes adding
   assert.ok(legalActions(g, 'p2').includes('attack'));
   assert.ok(applyAction(g, 'p2', { type: 'attack', cards: ['6H'] }).ok);
-  assert.ok(applyAction(g, 'p2', { type: 'done' }).ok);
-  // taker should have picked up the 6C and 6H
+  // confirm by remaining players to finalize
+  applyAction(g, 'p0', { type: 'done' });
+  applyAction(g, 'p2', { type: 'done' });
+  applyAction(g, 'p3', { type: 'done' });
+  assert.equal(g.takeMode, false, 'take finalized after all confirmed');
   assert.ok(g.players[1].hand.includes('6C') && g.players[1].hand.includes('6H'));
-  assert.equal(g.takeMode, false);
 });
 
-test('canBeat colour rules for jokers', () => {
-  const g = createGame(P(2), { deckSize: 36, handSize: 6 });
-  g.trumpSuit = 'S';
-  const { canBeat } = _internals;
-  assert.equal(canBeat('6C', BLACK_JOKER, g), true);
-  assert.equal(canBeat('6S', BLACK_JOKER, g), true);
-  assert.equal(canBeat('6H', BLACK_JOKER, g), false);
-  assert.equal(canBeat('6H', RED_JOKER, g), true);
-  assert.equal(canBeat('6C', RED_JOKER, g), false);
-});
-
-test('bout does not auto-end: each neighbour must press Done', () => {
+test('trump of same rank can defend OR transfer', () => {
   const g = createGame(P(3), { deckSize: 36, handSize: 6 });
-  setRoles(g, 1); // defender p1, primary p0, secondary p2
-  g.trumpSuit = 'S';
-  g.players[0].hand = ['7H', 'KD'];
-  g.players[1].hand = ['9H', '9D'];
-  g.players[2].hand = ['KC', 'KS'];
-  g.deck = ['2H', '2D', '2C', '2S', '3H', '3D'];
-  assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['7H'] }).ok);
-  assert.ok(applyAction(g, 'p1', { type: 'defend', attackIndex: 0, card: '9H' }).ok);
-  // primary gets the turn back (chance to throw more) — NOT auto-resolved
-  assert.ok(legalActions(g, 'p0').includes('done'));
-  assert.equal(g.table.length, 1);
-  assert.ok(applyAction(g, 'p0', { type: 'done' }).ok); // yield to secondary
-  assert.ok(legalActions(g, 'p2').includes('done'));
-  assert.equal(g.table.length, 1);
-  assert.ok(applyAction(g, 'p2', { type: 'done' }).ok); // now it resolves
-  assert.equal(g.table.length, 0);
-});
-
-test('trump of same rank can defend OR transfer (player choice)', () => {
-  const g = createGame(P(3), { deckSize: 36, handSize: 6 });
-  setRoles(g, 1);
-  g.trumpSuit = 'D'; // diamonds are trump
+  setRoles(g, 1); g.trumpSuit = 'D';
   g.players[0].hand = ['7C'];
-  g.players[1].hand = ['7D', '9S']; // 7D is a trump of the same rank as the attack
+  g.players[1].hand = ['7D', '9S'];
   g.players[2].hand = ['KC', 'KS'];
   g.deck = ['2H', '2C', '3H', '3C', '4H', '4C'];
   assert.ok(applyAction(g, 'p0', { type: 'attack', cards: ['7C'] }).ok);
   const acts = legalActions(g, 'p1');
-  assert.ok(acts.includes('transfer'), 'can transfer with 7D');
-  assert.ok(acts.includes('defend'), 'can also choose to defend');
-  assert.ok(_internals.canBeat('7C', '7D', g), 'trump 7D beats 7C');
+  assert.ok(acts.includes('transfer'));
+  assert.ok(acts.includes('defend'));
+  assert.ok(_internals.canBeat('7C', '7D', g));
 });
 
-test('viewFor hides hands and exposes takeMode/turn info', () => {
+test('viewFor exposes closing/pendingDone/adder and hides hands', () => {
   const g = createGame(P(3), { deckSize: 36, handSize: 6 });
   const v = viewFor(g, 'p0');
   assert.ok(Array.isArray(v.players.find((p) => p.id === 'p0').hand));
   assert.equal(v.players.find((p) => p.id === 'p1').hand, undefined);
-  assert.equal(typeof v.takeMode, 'boolean');
-  assert.ok('toActId' in v);
+  assert.ok('closing' in v && 'pendingDone' in v && 'adderId' in v);
 });

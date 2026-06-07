@@ -313,14 +313,9 @@ function renderTrumpUnder(v) {
   const slot = document.getElementById('trump-under');
   const deckPile = document.getElementById('deck-pile');
   slot.innerHTML = '';
-  if (v.deckCount > 0) {
-    deckPile.style.visibility = 'visible';
-    const c = cardEl(v.trumpCard);
-    c.classList.add('trumpcard');
-    slot.appendChild(c);
-  } else {
-    deckPile.style.visibility = 'hidden';
-  }
+  // Trump card is ALWAYS shown face-up; the face-down stack hides when the talon is empty.
+  const c = cardEl(v.trumpCard); c.classList.add('trumpcard'); slot.appendChild(c);
+  deckPile.classList.toggle('empty', v.deckCount === 0);
 }
 
 function renderOpponents(v) {
@@ -333,6 +328,7 @@ function renderOpponents(v) {
     let cls = 'opp';
     const isAtt = p.id === v.primaryId || p.id === v.secondaryId;
     const isDef = p.id === v.defenderId;
+    const isDone = (v.donePlayers || []).includes(p.id);
     if (isAtt) cls += ' attacker';
     if (isDef) cls += ' defender';
     if (p.id === v.toActId && v.phase === 'playing') cls += ' turn';
@@ -360,6 +356,7 @@ function renderOpponents(v) {
     role.textContent = isDef ? (v.takeMode ? 'Taking' : 'Defender') : isAtt ? 'Attacker' : '';
     div.appendChild(role);
 
+    if (v.closing && isDone) { const t = document.createElement('span'); t.className = 'donecheck'; t.textContent = '✓'; div.appendChild(t); }
     if (!p.connected) { const d = document.createElement('span'); d.className = 'offdot'; div.appendChild(d); }
     box.appendChild(div);
   });
@@ -369,7 +366,7 @@ function renderTable(v) {
   const pairs = document.getElementById('table-pairs');
   const msg = document.getElementById('table-msg');
   pairs.innerHTML = '';
-  const amDefender = v.you === v.defenderId && !v.takeMode;
+  const defending = v.you === v.defenderId && !v.takeMode && v.table.some((p) => !p.defense);
   const sel = SS.selected.size === 1 ? [...SS.selected][0] : null;
   const selJoker = sel && isJokerC(sel);
 
@@ -386,10 +383,10 @@ function renderTable(v) {
       if (!SS.prevTableCards.has(pair.defense)) d.classList.add('enter');
       wrap.appendChild(d);
       seen.add(pair.defense);
-    } else if (amDefender && sel) {
-      const tappable = selJoker ? cardColorC(sel) === cardColorC(pair.attack)
+    } else if (defending && sel) {
+      const ok = selJoker ? cardColorC(sel) === cardColorC(pair.attack)
         : canBeatC(sel, pair.attack, v.trumpSuit, v.deckSize);
-      if (tappable) {
+      if (ok) {
         wrap.classList.add('targetable');
         wrap.onclick = () => {
           const card = [...SS.selected][0];
@@ -397,28 +394,33 @@ function renderTable(v) {
           else send('action', { action: { type: 'defend', attackIndex: i, card } });
           sound('beat');
         };
+      } else {
+        wrap.onclick = () => toast("That card can't beat this one", 'warn', 1400);
       }
     }
     pairs.appendChild(wrap);
   });
   SS.prevTableCards = seen;
 
+  // table message
   if (v.takeMode) {
     msg.textContent = v.you === v.defenderId ? 'You are taking — collecting the cards…'
-      : (v.you === v.toActId ? 'Loading the taker — add matching cards or Done'
-        : `${nameOf(v, v.defenderId)} is taking…`);
+      : (v.you === v.adderId ? 'Load the taker — add matching cards, or Done'
+        : 'Press Done to continue');
   } else if (v.table.length === 0) {
     msg.textContent = v.toActId === v.you ? 'Your attack — pick same-rank card(s), then Attack'
       : `${nameOf(v, v.toActId)} is about to attack…`;
-  } else if (amDefender && selJoker) {
-    msg.textContent = 'Tap a matching-colour card — the rest go to the previous player';
-  } else if (amDefender && sel) {
-    msg.textContent = (v.yourActions || []).includes('transfer')
-      ? 'Tap a card to beat it — or press Transfer'
-      : 'Tap an attacking card to beat it';
-  } else if (v.toActId && v.toActId !== v.you) {
-    msg.textContent = `Waiting for ${nameOf(v, v.toActId)}…`;
-  } else { msg.textContent = ''; }
+  } else if (defending && selJoker) {
+    msg.textContent = 'Tap a matching-colour card — then Finish to push the rest';
+  } else if (defending && sel) {
+    msg.textContent = 'Tap a glowing card to beat it';
+  } else if (defending) {
+    msg.textContent = 'Select a card from your hand to defend';
+  } else if (v.closing) {
+    msg.textContent = v.you === v.adderId ? 'Your turn — add cards or Done' : 'Press Done to close';
+  } else {
+    msg.textContent = '';
+  }
 }
 
 function isDefenseSelection(v) {
@@ -431,21 +433,25 @@ function isDefenseSelection(v) {
 function renderStatus(v) {
   let txt = '';
   if (v.phase !== 'playing') { document.getElementById('status').textContent = ''; return; }
+  const youDone = (v.donePlayers || []).includes(v.you);
   if (v.takeMode) {
     if (v.you === v.defenderId) txt = 'You are taking…';
-    else if (v.you === v.toActId) txt = 'Load the taker — add a card or Done';
-    else txt = `${nameOf(v, v.defenderId)} is taking…`;
-  } else if (v.you === v.defenderId) {
+    else if (v.you === v.adderId) txt = 'Load the taker — add a card or Done';
+    else if (!youDone) txt = 'Press Done to continue';
+    else txt = `Waiting — ${(v.pendingDone || []).length} to confirm`;
+  } else if (v.you === v.defenderId && v.table.some((p) => !p.defense)) {
     if (v.jokerUsed) txt = 'Joker played — beat more, or Finish to push the rest';
     else txt = (v.yourActions || []).includes('jokerdefend')
-      ? 'Defending — beat a card, or tap a Joker then a matching card'
-      : 'You are defending';
-  } else if (v.you === v.toActId) {
-    txt = v.table.length === 0 ? 'Your attack' : 'Your turn — add a card or Done';
-  } else if (v.you === v.primaryId || v.you === v.secondaryId) {
+      ? 'Defend — pick a card, or tap a Joker then a matching card'
+      : 'Defend — pick a card to beat with';
+  } else if (v.closing) {
+    if (v.you === v.adderId) txt = 'Your turn — add cards or Done';
+    else if (!youDone) txt = 'Press Done to close the attack';
+    else txt = `Waiting for ${(v.pendingDone || []).length} player(s) to press Done`;
+  } else if (v.table.length === 0 && v.you === v.toActId) {
+    txt = 'Your attack';
+  } else if (v.toActId && v.toActId !== v.you) {
     txt = `Waiting for ${nameOf(v, v.toActId)}…`;
-  } else {
-    txt = `${nameOf(v, v.toActId)}'s turn`;
   }
   document.getElementById('status').textContent = txt;
 }
@@ -474,9 +480,13 @@ function renderActions(v) {
   }
   if (acts.includes('done')) {
     const amDef = v.you === v.defenderId && !v.takeMode;
-    addBtn(box, amDef ? 'Finish — push rest' : 'Done', amDef ? 'act-warn' : 'act-primary', false, () => {
-      send('action', { action: { type: 'done' } }); sound('beat');
-    });
+    if (amDef && v.jokerUsed) {
+      addBtn(box, 'Finish — push rest', 'act-warn', false, () => { send('action', { action: { type: 'done' } }); sound('beat'); });
+    } else {
+      const left = (v.pendingDone || []).length;
+      const label = left > 1 ? `Done (${left} left)` : 'Done';
+      addBtn(box, label, 'act-primary', false, () => { send('action', { action: { type: 'done' } }); sound('beat'); });
+    }
   }
   if (sel.length > 0) {
     addBtn(box, 'Clear', 'act-plain', false, () => { SS.selected.clear(); renderGame(); });
@@ -555,21 +565,11 @@ function fitHand() {
 window.addEventListener('resize', () => { if (SS.view) fitHand(); });
 
 function toggleSelect(card, v) {
-  if (SS.selected.has(card)) { SS.selected.delete(card); renderGame(); return; }
-
-  const amDefender = v.you === v.defenderId;
-  const rank = parseCard(card).rank;
-
-  if (amDefender && v.table.some((p) => !p.defense)) {
-    // Defending: one card beats one attack. Allow multi-select only for a transfer
-    // (all selected must match the attack rank).
-    const transferRank = v.yourActions.includes('transfer') && rank === parseCard(v.table[0].attack).rank;
-    if (!transferRank) SS.selected.clear();
-    else if ([...SS.selected].some((c) => parseCard(c).rank !== rank)) SS.selected.clear();
-  } else {
-    // Attacking / throwing in: all selected cards must share one rank.
-    if ([...SS.selected].some((c) => parseCard(c).rank !== rank)) SS.selected.clear();
-  }
+  if (SS.selected.has(card)) { SS.selected.delete(card); sound('select'); renderGame(); return; }
+  // Same-rank non-joker cards accumulate (for multi attacks/transfer); anything else resets.
+  const rank = isJokerC(card) ? null : parseCard(card).rank;
+  const mixed = [...SS.selected].some((c) => isJokerC(c) || isJokerC(card) || parseCard(c).rank !== rank);
+  if (mixed) SS.selected.clear();
   SS.selected.add(card);
   sound('select');
   renderGame();
@@ -628,10 +628,10 @@ function cardEl(id) {
   if (isJokerC(id)) {
     const el = document.createElement('div');
     const red = id === 'RJ';
-    el.className = 'playing-card joker' + (red ? ' red' : '');
+    el.className = 'playing-card joker ' + (red ? 'jr' : 'jb');
     el.innerHTML = `<div class="corner"><span>★</span></div>
       <div class="pip">🃏</div>
-      <div class="jlabel">JOKER</div>
+      <div class="jlabel">${red ? 'RED' : 'BLACK'}</div>
       <div class="corner bottom"><span>★</span></div>`;
     return el;
   }

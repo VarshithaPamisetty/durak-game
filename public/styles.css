@@ -199,6 +199,11 @@ button.ghost {
 .opp.attacker .role { color: var(--gold); }
 .opp.defender .role { color: var(--accent-2); }
 .opp .offdot { position: absolute; top: 6px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+.opp .donecheck {
+  position: absolute; top: 5px; right: 7px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--accent-2); color: #042018; font-size: 11px; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+}
 .mini-cards { display: flex; justify-content: center; margin-top: 4px; height: 22px; }
 .mini-card {
   width: 15px; height: 21px; border-radius: 3px; margin-left: -6px;
@@ -241,6 +246,8 @@ button.ghost {
   border: 1px solid #3f0f17; box-shadow: 2px 2px 0 rgba(63,15,23,0.55), var(--shadow-sm);
 }
 .deck-stack::after { content: ""; position: absolute; inset: 5px; border-radius: 5px; border: 1px solid rgba(228,199,129,0.4); }
+.deck-pile.empty .deck-stack { display: none; }
+.deck-pile.empty .trump-under { left: calc(var(--card-w) * 0.25); }
 .deck-pile .pile-count {
   position: absolute; right: calc(var(--card-w) / 2); transform: translateX(50%); bottom: -9px;
 }
@@ -267,16 +274,18 @@ button.ghost {
 .playing-card .pip { text-align: center; font-size: 28px; margin: -7px 0; line-height: 1; }
 .playing-card.trumpcard { box-shadow: 0 0 0 2px var(--gold), 0 2px 6px rgba(0,0,0,0.3); }
 .playing-card.joker {
-  background: linear-gradient(157deg, #1c1430 0%, #2b1d4a 100%); color: #f0e6ff;
-  border: 1px solid #5b46a0;
+  border-width: 2px; color: #fff;
 }
-.playing-card.joker.red { color: #ffd2dc; }
 .playing-card.joker .pip { font-size: 26px; }
-.playing-card.joker .jlabel { text-align: center; font-size: 8px; letter-spacing: 1.5px; font-weight: 800; opacity: 0.85; margin-top: -4px; }
-.playing-card.joker .corner span { color: #d8d0f0; }
-.playing-card.joker.red { border-color: #a04668; background: linear-gradient(157deg, #2a1330 0%, #46203a 100%); }
-.playing-card.joker.red .corner span { color: #ff7088; }
-.playing-card.joker.red .jlabel { color: #ffd2dc; }
+.playing-card.joker .jlabel { text-align: center; font-size: 9px; letter-spacing: 1.5px; font-weight: 900; margin-top: -4px; }
+.playing-card.joker.jr {
+  background: linear-gradient(157deg, #b51d33 0%, #7d1020 100%); border-color: #ff9aa8;
+}
+.playing-card.joker.jr .corner span, .playing-card.joker.jr .jlabel { color: #ffe2e7; }
+.playing-card.joker.jb {
+  background: linear-gradient(157deg, #2a2f3a 0%, #11151c 100%); border-color: #9fb0c4;
+}
+.playing-card.joker.jb .corner span, .playing-card.joker.jb .jlabel { color: #e7eef6; }
 .pair.targetable { cursor: pointer; }
 .pair.targetable::after {
   content: ""; position: absolute; inset: -4px; border-radius: 10px;
@@ -307,6 +316,11 @@ button.ghost {
 .hand .playing-card.anim { animation: dealIn 0.34s backwards; }
 .hand .playing-card:hover { transform: translateY(-14px) scale(1.05); z-index: 7; box-shadow: 0 8px 18px rgba(0,0,0,0.4); }
 .hand .playing-card.selected { transform: translateY(-26px) scale(1.06); box-shadow: 0 0 0 3px var(--gold), 0 10px 22px rgba(0,0,0,0.45); z-index: 8; }
+.hand .playing-card.selected::after {
+  content: "✓"; position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  width: 20px; height: 20px; border-radius: 50%; background: var(--gold); color: #2a1d05;
+  font-size: 13px; font-weight: 900; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm);
+}
 .hand .playing-card.dimmed { opacity: 0.4; filter: grayscale(0.35); }
 
 .status { position: relative; z-index: 1; text-align: center; font-size: 14px; min-height: 20px; color: var(--gold); font-weight: 700; }

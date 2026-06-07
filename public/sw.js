@@ -1,6 +1,6 @@
 // Durak service worker — caches the app shell so it installs and loads fast.
 // Gameplay itself is live (WebSocket) and always uses the network.
-const CACHE = 'durak-shell-v5';
+const CACHE = 'durak-shell-v6';
 const SHELL = [
   '/',
   '/index.html',
