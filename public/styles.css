@@ -151,6 +151,14 @@ button.ghost {
 .player-list .pname { font-weight: 600; }
 .player-list .host { margin-left: auto; font-size: 10px; color: #2a1d05; background: var(--gold); padding: 3px 8px; border-radius: 999px; font-weight: 800; }
 .player-list .off-tag { margin-left: auto; font-size: 11px; color: var(--danger); }
+.player-list .bot-tag { background: #6aa3ff; color: #04204a; }
+.rm-bot {
+  margin-left: 8px; width: 26px; height: 26px; border-radius: 8px; cursor: pointer;
+  background: rgba(217,81,79,0.18); color: var(--danger); border: 1px solid rgba(217,81,79,0.4);
+  font-weight: 800; line-height: 1;
+}
+.rm-bot:active { transform: scale(0.94); }
+#btn-addbot { margin-bottom: 10px; }
 
 /* ---------- game ---------- */
 #screen-game { padding: calc(8px + var(--safe-top)) 10px calc(10px + var(--safe-bottom)); gap: 8px; }

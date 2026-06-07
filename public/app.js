@@ -234,22 +234,34 @@ function renderLobby() {
 
   const list = document.getElementById('lobby-players');
   list.innerHTML = '';
+  const isHost = SS.playerId === r.hostId;
   r.players.forEach((p) => {
     const li = document.createElement('li');
-    li.appendChild(avatarEl(p.name, p.id));
+    li.appendChild(avatarEl(p.isBot ? 'B' : p.name, p.id));
     const nm = document.createElement('span');
     nm.className = 'pname';
     nm.textContent = p.name + (p.id === SS.playerId ? ' (you)' : '');
     li.appendChild(nm);
     if (p.id === r.hostId) {
       const h = document.createElement('span'); h.className = 'host'; h.textContent = 'HOST'; li.appendChild(h);
+    } else if (p.isBot) {
+      const tag = document.createElement('span'); tag.className = 'host bot-tag'; tag.textContent = 'BOT'; li.appendChild(tag);
+      if (isHost) {
+        const rm = document.createElement('button');
+        rm.className = 'rm-bot'; rm.textContent = '✕'; rm.title = 'Remove bot';
+        rm.onclick = () => { send('removebot', { playerId: p.id }); sound('select'); };
+        li.appendChild(rm);
+      }
     } else if (!p.connected) {
       const o2 = document.createElement('span'); o2.className = 'off-tag'; o2.textContent = 'offline'; li.appendChild(o2);
     }
     list.appendChild(li);
   });
 
-  const isHost = SS.playerId === r.hostId;
+  const addBotBtn = document.getElementById('btn-addbot');
+  const roomFull = r.players.length >= r.options.maxPlayers;
+  addBotBtn.style.display = isHost && !roomFull ? 'block' : 'none';
+
   const startBtn = document.getElementById('btn-start');
   startBtn.style.display = isHost ? 'block' : 'none';
   startBtn.disabled = r.players.length < 2;
@@ -542,6 +554,7 @@ function copyCode() {
 
 // ---------- wire static buttons ----------
 document.getElementById('btn-start').onclick = () => { send('start'); sound('deal'); };
+document.getElementById('btn-addbot').onclick = () => { send('addbot'); sound('join'); };
 document.getElementById('btn-rematch').onclick = () => { send('rematch'); SS.endShown = false; sound('deal'); };
 document.getElementById('lobby-code').onclick = copyCode;
 document.getElementById('game-code').onclick = copyCode;

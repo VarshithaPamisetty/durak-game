@@ -19,6 +19,7 @@ be wrapped into a native iOS/Android app with a tool like Capacitor.
 - Real-time sync across all devices, attack / defend / throw-in / take / transfer,
   automatic drawing, turn rotation, and Durak (loser) detection.
 - **Rematch** from the end screen.
+- **Add bot players** in the lobby (host-only) — great for testing or filling seats.
 - Polished, game-like UI: card faces, dealing animations, turn glow, avatars, sound
   effects (toggleable), confetti on a win, toast notifications.
 - **Reconnect-friendly**: refresh or lose signal and you rejoin the same seat

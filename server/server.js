@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import { createGame, applyAction, viewFor } from './game.js';
+import { chooseBotAction, botName } from './bot.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -28,6 +29,7 @@ const wss = new WebSocketServer({ server });
  */
 const rooms = new Map();
 const EMPTY_ROOM_TTL = 1000 * 60 * 10; // keep a disconnected room alive 10 min for reconnects
+const BOT_DELAY = Number(process.env.BOT_DELAY) || 850; // ms between bot moves
 
 function makeRoomCode() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no confusing chars
@@ -55,6 +57,26 @@ function broadcastRoom(room) {
   }
 }
 
+function scheduleBots(room) {
+  if (!room.game || room.game.phase !== 'playing') return;
+  if (room.botTimer) return; // a tick is already pending
+  const hasMove = room.players.some((p) => p.isBot && chooseBotAction(room.game, p.id));
+  if (!hasMove) return;
+  room.botTimer = setTimeout(() => {
+    room.botTimer = null;
+    if (!room.game || room.game.phase !== 'playing') return;
+    const bot = room.players.find((p) => p.isBot && chooseBotAction(room.game, p.id));
+    if (bot) {
+      const act = chooseBotAction(room.game, bot.id);
+      if (act) {
+        const r = applyAction(room.game, bot.id, act);
+        if (r.ok) broadcastRoom(room);
+      }
+    }
+    scheduleBots(room); // keep going until no bot has a move
+  }, BOT_DELAY);
+}
+
 function roomSummary(room) {
   return {
     code: room.code,
@@ -64,7 +86,8 @@ function roomSummary(room) {
     players: room.players.map((p) => ({
       id: p.id,
       name: p.name,
-      connected: room.sockets.has(p.id),
+      isBot: !!p.isBot,
+      connected: p.isBot ? true : room.sockets.has(p.id),
     })),
   };
 }
@@ -99,8 +122,8 @@ wss.on('connection', (ws) => {
     if (room.sockets.get(ws.playerId) === ws) room.sockets.delete(ws.playerId);
 
     if (!room.game) {
-      // Lobby: remove disconnected non-host players so the list stays clean.
-      room.players = room.players.filter((p) => room.sockets.has(p.id) || p.id === room.hostId);
+      // Lobby: remove disconnected non-host humans; keep the host and any bots.
+      room.players = room.players.filter((p) => room.sockets.has(p.id) || p.id === room.hostId || p.isBot);
     }
     if (room.sockets.size === 0) {
       scheduleCleanup(room); // grace period for reconnects (refresh, sleep, etc.)
@@ -126,6 +149,8 @@ function handleMessage(ws, msg) {
     case 'join': return onJoin(ws, msg);
     case 'rejoin': return onRejoin(ws, msg);
     case 'start': return onStart(ws, msg);
+    case 'addbot': return onAddBot(ws, msg);
+    case 'removebot': return onRemoveBot(ws, msg);
     case 'action': return onAction(ws, msg);
     case 'rematch': return onRematch(ws, msg);
     case 'leave': return ws.close();
@@ -157,6 +182,7 @@ function onCreate(ws, msg) {
     sockets: new Map(),
     game: null,
     emptyTimer: null,
+    botTimer: null,
   };
   rooms.set(code, room);
   attach(ws, room, playerId);
@@ -198,6 +224,26 @@ function onStart(ws, msg) {
   if (room.players.length < 2) return send(ws, 'error', { message: 'Need at least 2 players.' });
   room.game = createGame(room.players, room.options);
   broadcastRoom(room);
+  scheduleBots(room);
+}
+
+function onAddBot(ws) {
+  const room = rooms.get(ws.roomCode);
+  if (!room) return;
+  if (ws.playerId !== room.hostId) return send(ws, 'error', { message: 'Only the host can add bots.' });
+  if (room.game) return send(ws, 'error', { message: 'Game already started.' });
+  if (room.players.length >= room.options.maxPlayers) return send(ws, 'error', { message: 'Room is full.' });
+  room.players.push({ id: 'bot-' + randomUUID(), name: botName(room.players.map((p) => p.name)), isBot: true });
+  broadcastRoom(room);
+}
+
+function onRemoveBot(ws, msg) {
+  const room = rooms.get(ws.roomCode);
+  if (!room) return;
+  if (ws.playerId !== room.hostId) return send(ws, 'error', { message: 'Only the host can remove bots.' });
+  if (room.game) return send(ws, 'error', { message: 'Game already started.' });
+  room.players = room.players.filter((p) => !(p.isBot && p.id === msg.playerId));
+  broadcastRoom(room);
 }
 
 function onAction(ws, msg) {
@@ -209,6 +255,7 @@ function onAction(ws, msg) {
     return;
   }
   broadcastRoom(room);
+  scheduleBots(room);
 }
 
 function onRematch(ws, msg) {
@@ -217,6 +264,7 @@ function onRematch(ws, msg) {
   if (ws.playerId !== room.hostId) return send(ws, 'error', { message: 'Only the host can restart.' });
   room.game = createGame(room.players, room.options);
   broadcastRoom(room);
+  scheduleBots(room);
 }
 
 function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
