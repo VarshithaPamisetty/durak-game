@@ -48,6 +48,21 @@ Notes about the free tier:
 Other free options that also work: **Railway**, **Fly.io**, **Glitch** (all support
 Node + WebSockets). The app only needs `PORT` from the environment, which they all set.
 
+## Install it on your phone (PWA)
+
+The app is a **Progressive Web App**, so it installs to your home screen with its own
+icon and runs fullscreen — no app store needed. Deploy it first (above), then open the
+`https://…onrender.com` URL on your phone:
+
+- **iPhone/iPad (Safari):** tap the **Share** button → **Add to Home Screen** → **Add**.
+- **Android (Chrome):** tap the **⋮** menu → **Install app** (or **Add to Home screen**).
+  Chrome usually also shows an "Install" banner automatically.
+- **Desktop (Chrome/Edge):** click the **install icon** in the address bar.
+
+It launches like a native app, remembers your name, and rejoins your seat if you lose
+signal. (Installation requires HTTPS, which Render provides automatically — it won't be
+installable over a plain `http://LAN-ip` address.)
+
 ## Run it locally
 
 You need **Node.js 18+**.

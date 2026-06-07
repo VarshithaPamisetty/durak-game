@@ -1,0 +1,27 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="felt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f5440"/>
+      <stop offset="1" stop-color="#06281e"/>
+    </linearGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- full-bleed background so any mask shape stays on-brand -->
+  <rect width="512" height="512" fill="url(#felt)"/>
+
+  <!-- content kept within the ~80% safe zone, scaled to ~0.66 -->
+  <g transform="translate(256 256) scale(0.62) translate(-256 -256)">
+    <g filter="url(#sh)" transform="translate(286 262) rotate(14)">
+      <rect x="-100" y="-142" width="200" height="284" rx="22" fill="#eef0ea"/>
+    </g>
+    <g filter="url(#sh)" transform="translate(232 256) rotate(-10)">
+      <rect x="-100" y="-142" width="200" height="284" rx="22" fill="#ffffff"/>
+      <text x="-74" y="-78" font-family="Georgia, serif" font-size="76" font-weight="700" fill="#e25563">A</text>
+      <text x="0" y="58" font-family="Arial, sans-serif" font-size="168" fill="#e25563" text-anchor="middle">&#9829;</text>
+      <text x="74" y="132" font-family="Georgia, serif" font-size="76" font-weight="700" fill="#e25563" text-anchor="end" transform="rotate(180 74 108)">A</text>
+    </g>
+  </g>
+</svg>

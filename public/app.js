@@ -561,3 +561,10 @@ async function boot() {
   }
 }
 boot();
+
+// Register service worker (enables install / "Add to Home Screen").
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
