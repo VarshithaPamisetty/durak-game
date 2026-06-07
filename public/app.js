@@ -2,7 +2,7 @@
 
 const SUIT_SYMBOL = { S: '♠', H: '♥', D: '♦', C: '♣' };
 const RED_SUITS = new Set(['H', 'D']);
-const AVATAR_COLORS = ['#e25563', '#45d49c', '#f0cf76', '#6aa3ff', '#c084fc', '#ff9f6a', '#4dd0e1', '#f06595'];
+const AVATAR_COLORS = ['#bf6068', '#4f8c74', '#c2a04e', '#5a7c98', '#8a78a4', '#bc8556', '#5b9aa0', '#a86d83'];
 
 const SS = {
   ws: null,
@@ -428,7 +428,7 @@ function renderActions(v) {
     });
   }
   if (acts.includes('done')) {
-    addBtn(box, 'Pass', 'act-primary', false, () => {
+    addBtn(box, 'Done', 'act-primary', false, () => {
       send('action', { action: { type: 'done' } }); sound('beat');
     });
   }
@@ -473,7 +473,7 @@ function renderHand(v) {
     // gentle fan
     const off = i - mid;
     el.style.setProperty('--rot', (off * spread).toFixed(2) + 'deg');
-    el.style.setProperty('--ty', (Math.abs(off) * Math.abs(off) * 1.1).toFixed(1) + 'px');
+    el.style.setProperty('--ty', Math.min(14, Math.abs(off) * Math.abs(off) * 0.8).toFixed(1) + 'px');
 
     if (SS.selected.has(card)) el.classList.add('selected');
     // Dim cards that can't combine with the current selection (attacking/throwing same-rank).
@@ -483,8 +483,29 @@ function renderHand(v) {
     el.onclick = () => toggleSelect(card, v);
     hand.appendChild(el);
   });
+
+  // Compress the fan so every card stays on screen (no edge cut-off).
+  fitHand();
+
   if (animate && n) sound('deal');
 }
+
+function fitHand() {
+  const wrap = document.querySelector('.hand-wrap');
+  const hand = document.getElementById('hand');
+  const cards = [...hand.children];
+  const n = cards.length;
+  if (!n) return;
+  const cw = cards[0].offsetWidth || 60;
+  const avail = wrap.clientWidth - 40; // account for padding + edge breathing room
+  const maxStep = cw * 0.62;           // comfortable spacing when there's room
+  let step = n > 1 ? Math.min(maxStep, (avail - cw) / (n - 1)) : 0;
+  step = Math.max(step, 14);           // never collapse to nothing
+  cards.forEach((el, i) => { el.style.marginLeft = i === 0 ? '0px' : (step - cw) + 'px'; });
+  const total = cw + (n - 1) * step;
+  hand.style.justifyContent = total > avail ? 'flex-start' : 'center';
+}
+window.addEventListener('resize', () => { if (SS.view) fitHand(); });
 
 function toggleSelect(card, v) {
   if (SS.selected.has(card)) { SS.selected.delete(card); renderGame(); return; }
