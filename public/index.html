@@ -58,7 +58,7 @@
         <div id="tab-create" class="tab-body">
           <label class="field">
             <span>Players: <b id="lbl-players">4</b></span>
-            <input id="opt-players" type="range" min="2" max="6" value="4" />
+            <input id="opt-players" type="range" min="2" max="10" value="4" />
           </label>
           <label class="field">
             <span>Cards per player: <b id="lbl-hand">6</b></span>
@@ -67,11 +67,12 @@
           <label class="field">
             <span>Deck</span>
             <select id="opt-deck">
-              <option value="36" selected>36 cards (6 – A)</option>
-              <option value="52">52 cards (2 – A)</option>
+              <option value="52" selected>52 cards (2 – A)</option>
+              <option value="36">36 cards (6 – A)</option>
               <option value="24">24 cards (9 – A)</option>
             </select>
           </label>
+          <p class="mini-note">Includes 2 Jokers · hands auto-adjust to fit the deck for big tables.</p>
           <button id="btn-create" class="primary">Create room</button>
         </div>
 

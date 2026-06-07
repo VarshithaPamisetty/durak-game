@@ -350,7 +350,7 @@ function renderOpponents(v) {
     div.appendChild(cards);
 
     const role = document.createElement('div'); role.className = 'role';
-    role.textContent = isDef ? 'Defender' : isAtt ? 'Attacker' : '';
+    role.textContent = isDef ? (v.takeMode ? 'Taking' : 'Defender') : isAtt ? 'Attacker' : '';
     div.appendChild(role);
 
     if (!p.connected) { const d = document.createElement('span'); d.className = 'offdot'; div.appendChild(d); }
@@ -362,8 +362,9 @@ function renderTable(v) {
   const pairs = document.getElementById('table-pairs');
   const msg = document.getElementById('table-msg');
   pairs.innerHTML = '';
-  const amDefender = v.you === v.defenderId;
-  const canDefendNow = amDefender && SS.selected.size === 1 && isDefenseSelection(v);
+  const amDefender = v.you === v.defenderId && !v.takeMode;
+  const sel = SS.selected.size === 1 ? [...SS.selected][0] : null;
+  const selJoker = sel && isJokerC(sel);
 
   const seen = new Set();
   v.table.forEach((pair, i) => {
@@ -378,22 +379,32 @@ function renderTable(v) {
       if (!SS.prevTableCards.has(pair.defense)) d.classList.add('enter');
       wrap.appendChild(d);
       seen.add(pair.defense);
-    } else if (canDefendNow) {
-      wrap.style.cursor = 'pointer';
-      wrap.onclick = () => {
-        const card = [...SS.selected][0];
-        send('action', { action: { type: 'defend', attackIndex: i, card } });
-        sound('beat');
-      };
+    } else if (amDefender && sel) {
+      const tappable = selJoker ? cardColorC(sel) === cardColorC(pair.attack) : isDefenseSelection(v);
+      if (tappable) {
+        wrap.classList.add('targetable');
+        wrap.onclick = () => {
+          const card = [...SS.selected][0];
+          if (isJokerC(card)) send('action', { action: { type: 'jokerdefend', attackIndex: i, card } });
+          else send('action', { action: { type: 'defend', attackIndex: i, card } });
+          sound('beat');
+        };
+      }
     }
     pairs.appendChild(wrap);
   });
   SS.prevTableCards = seen;
 
-  if (v.table.length === 0) {
+  if (v.takeMode) {
+    msg.textContent = v.you === v.defenderId ? 'You are taking — collecting the cards…'
+      : (v.you === v.toActId ? 'Loading the taker — add matching cards or Done'
+        : `${nameOf(v, v.defenderId)} is taking…`);
+  } else if (v.table.length === 0) {
     msg.textContent = v.toActId === v.you ? 'Your attack — pick same-rank card(s), then Attack'
       : `${nameOf(v, v.toActId)} is about to attack…`;
-  } else if (canDefendNow) {
+  } else if (amDefender && selJoker) {
+    msg.textContent = 'Tap a matching-colour card — the rest go to the previous player';
+  } else if (amDefender && sel) {
     msg.textContent = 'Tap an attacking card to beat it';
   } else if (v.toActId && v.toActId !== v.you) {
     msg.textContent = `Waiting for ${nameOf(v, v.toActId)}…`;
@@ -410,8 +421,14 @@ function isDefenseSelection(v) {
 function renderStatus(v) {
   let txt = '';
   if (v.phase !== 'playing') { document.getElementById('status').textContent = ''; return; }
-  if (v.you === v.defenderId) {
-    txt = 'You are defending';
+  if (v.takeMode) {
+    if (v.you === v.defenderId) txt = 'You are taking…';
+    else if (v.you === v.toActId) txt = 'Load the taker — add a card or Done';
+    else txt = `${nameOf(v, v.defenderId)} is taking…`;
+  } else if (v.you === v.defenderId) {
+    txt = (v.yourActions || []).includes('jokerdefend')
+      ? 'Defending — beat a card, or tap a Joker then a matching card'
+      : 'You are defending';
   } else if (v.you === v.toActId) {
     txt = v.table.length === 0 ? 'Your attack' : 'Your turn — add a card or Done';
   } else if (v.you === v.primaryId || v.you === v.secondaryId) {
@@ -473,7 +490,8 @@ function renderHand(v) {
   const grew = newCards.length > 0;
 
   // determine which ranks are currently "active" so we can dim non-playable cards.
-  const selRank = SS.selected.size ? parseCard([...SS.selected][0]).rank : null;
+  const selCard = SS.selected.size ? [...SS.selected][0] : null;
+  const selRank = selCard && !isJokerC(selCard) ? parseCard(selCard).rank : null;
   const amDefender = v.you === v.defenderId;
   const defending = amDefender && v.table.some((p) => !p.defense);
 
@@ -571,7 +589,24 @@ function renderOverlay(v) {
 }
 
 // ---------- card rendering ----------
+function isJokerC(id) { return id === 'RJ' || id === 'BJ'; }
+function cardColorC(id) {
+  if (id === 'RJ') return 'red';
+  if (id === 'BJ') return 'black';
+  const s = id.slice(-1);
+  return (s === 'H' || s === 'D') ? 'red' : 'black';
+}
 function cardEl(id) {
+  if (isJokerC(id)) {
+    const el = document.createElement('div');
+    const red = id === 'RJ';
+    el.className = 'playing-card joker' + (red ? ' red' : '');
+    el.innerHTML = `<div class="corner"><span>★</span></div>
+      <div class="pip">🃏</div>
+      <div class="jlabel">JOKER</div>
+      <div class="corner bottom"><span>★</span></div>`;
+    return el;
+  }
   const { rank, suit } = parseCard(id);
   const el = document.createElement('div');
   el.className = 'playing-card' + (RED_SUITS.has(suit) ? ' red' : '');

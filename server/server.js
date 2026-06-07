@@ -167,8 +167,8 @@ function attach(ws, room, playerId) {
 
 function onCreate(ws, msg) {
   const name = (msg.name || '').trim().slice(0, 20) || 'Player';
-  const maxPlayers = clamp(parseInt(msg.maxPlayers, 10) || 4, 2, 6);
-  const handSize = clamp(parseInt(msg.handSize, 10) || 6, 1, 12);
+  const maxPlayers = clamp(parseInt(msg.maxPlayers, 10) || 4, 2, 10);
+  const handSize = clamp(parseInt(msg.handSize, 10) || 6, 1, 8);
   let deckSize = parseInt(msg.deckSize, 10) || 36;
   if (![20, 24, 36, 52].includes(deckSize)) deckSize = 36;
 
@@ -177,7 +177,7 @@ function onCreate(ws, msg) {
   const room = {
     code,
     hostId: playerId,
-    options: { maxPlayers, handSize, deckSize, maxAttacks: Math.min(6, handSize) },
+    options: { maxPlayers, handSize, deckSize, jokers: true },
     players: [{ id: playerId, name }],
     sockets: new Map(),
     game: null,

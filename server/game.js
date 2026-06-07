@@ -1,27 +1,26 @@
-// Durak engine — Perevodnoy (transfer) variant with neighbour-only,
-// left-priority attacking.
-//
-// Turn model (one actor at a time):
-//   - Defender D is attacked only by their two neighbours:
-//       primary L = player before D (the opener, has priority)
-//       secondary R = player after D (may attack only after L yields)
-//   - While there are undefended cards, it's D's turn (defend / take / transfer).
-//   - When the table is fully defended, the priority attacker may add matching
-//     cards or press Done. Priority starts at L; if L is Done it passes to R;
-//     if R is also Done (or nobody can add) the bout ends.
-//   - Every time D beats the table clean, priority snaps back to L.
+// Durak engine — transfer variant, neighbour-only left-priority attacking,
+// load-the-taker, 2 jokers (colour defence + push-the-rest), N players.
 
 const SUITS = ['S', 'H', 'D', 'C'];
 const SUIT_SYMBOL = { S: '♠', H: '♥', D: '♦', C: '♣' };
 const FULL_RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+export const RED_JOKER = 'RJ';
+export const BLACK_JOKER = 'BJ';
 
 function ranksForDeck(deckSize) {
   const map = { 52: 0, 36: 4, 24: 7, 20: 8 };
   return FULL_RANKS.slice(map[deckSize] ?? 4);
 }
 
+export function isJoker(id) { return id === RED_JOKER || id === BLACK_JOKER; }
 export function cardId(rank, suit) { return `${rank}${suit}`; }
 export function parseCard(id) { return { rank: id.slice(0, -1), suit: id.slice(-1) }; }
+export function cardColor(id) {
+  if (id === RED_JOKER) return 'red';
+  if (id === BLACK_JOKER) return 'black';
+  const s = id.slice(-1);
+  return (s === 'H' || s === 'D') ? 'red' : 'black';
+}
 function rankValue(rank, ranks) { return ranks.indexOf(rank); }
 
 function shuffle(array, rng = Math.random) {
@@ -35,27 +34,40 @@ function shuffle(array, rng = Math.random) {
 
 export function createGame(players, options = {}) {
   const deckSize = options.deckSize ?? 36;
-  const handSize = options.handSize ?? 6;
-  const maxAttacks = options.maxAttacks ?? 6;
+  const useJokers = options.jokers !== false; // jokers on by default
   const ranks = ranksForDeck(deckSize);
 
   let deck = [];
   for (const suit of SUITS) for (const rank of ranks) deck.push(cardId(rank, suit));
+  if (useJokers) deck.push(RED_JOKER, BLACK_JOKER);
   deck = shuffle(deck);
 
+  // The trump (bottom) card must not be a joker.
+  if (isJoker(deck[0])) {
+    const swap = deck.findIndex((c) => !isJoker(c));
+    if (swap > 0) { [deck[0], deck[swap]] = [deck[swap], deck[0]]; }
+  }
   const trumpCard = deck[0];
   const trumpSuit = parseCard(trumpCard).suit;
 
+  // Adaptive hand size: every player must get a full hand from the deck.
+  const n = players.length;
+  const requested = options.handSize ?? 6;
+  const handSize = Math.max(1, Math.min(requested, Math.floor(deck.length / n)));
+  const maxAttacks = Math.min(options.maxAttacks ?? 6, handSize);
+
   const state = {
-    deckSize, handSize, maxAttacks, ranks, trumpSuit, trumpCard,
+    deckSize, handSize, maxAttacks, ranks, trumpSuit, trumpCard, useJokers,
     deck,
     discardCount: 0,
     players: players.map((p) => ({ id: p.id, name: p.name, isBot: !!p.isBot, hand: [], out: false })),
     table: [],
     defenderIndex: 1,
-    primaryIndex: 0,    // L — opener / priority
-    secondaryIndex: -1, // R — other neighbour
-    priorityIndex: 0,   // who may add right now (when fully defended)
+    primaryIndex: 0,
+    secondaryIndex: -1,
+    priorityIndex: 0,
+    takeMode: false,
+    noPlay: 0,
     phase: 'playing',
     loserId: null,
     log: [],
@@ -68,12 +80,18 @@ export function createGame(players, options = {}) {
   state.defenderIndex = nextActiveIndex(state, opener);
   setRoles(state);
   state.log.push(`Trump ${SUIT_SYMBOL[trumpSuit]}. ${state.players[opener].name} attacks ${state.players[state.defenderIndex].name}.`);
+  normalizeTurn(state);
   return state;
 }
 
 function sortHands(state) {
   for (const p of state.players) {
     p.hand.sort((a, b) => {
+      const ja = isJoker(a), jb = isJoker(b);
+      if (ja || jb) {
+        if (ja && jb) return a === RED_JOKER ? -1 : 1;
+        return ja ? 1 : -1; // jokers to the far right
+      }
       const ca = parseCard(a), cb = parseCard(b);
       const ta = ca.suit === state.trumpSuit, tb = cb.suit === state.trumpSuit;
       if (ta !== tb) return ta ? 1 : -1;
@@ -87,6 +105,7 @@ function lowestTrumpHolder(state) {
   let best = null, bestIdx = 0;
   state.players.forEach((p, idx) => {
     for (const c of p.hand) {
+      if (isJoker(c)) continue;
       const { rank, suit } = parseCard(c);
       if (suit === state.trumpSuit) {
         const v = rankValue(rank, state.ranks);
@@ -97,7 +116,7 @@ function lowestTrumpHolder(state) {
   return bestIdx;
 }
 
-// ---- seat helpers ----
+// ---- seats ----
 function nextActiveIndex(state, from) {
   const n = state.players.length;
   for (let s = 1; s <= n; s++) { const i = (from + s) % n; if (!state.players[i].out) return i; }
@@ -118,10 +137,11 @@ function setRoles(state) {
 }
 
 function indexOfId(state, id) { return state.players.findIndex((p) => p.id === id); }
-function playerById(state, id) { return state.players.find((p) => p.id === id); }
 
 // ---- rules ----
 function canBeat(attack, defense, state) {
+  if (isJoker(defense)) return cardColor(defense) === cardColor(attack); // colour match
+  if (isJoker(attack)) return false; // jokers are never attacked, but guard anyway
   const a = parseCard(attack), d = parseCard(defense);
   const aT = a.suit === state.trumpSuit, dT = d.suit === state.trumpSuit;
   if (aT) return dT && rankValue(d.rank, state.ranks) > rankValue(a.rank, state.ranks);
@@ -131,39 +151,58 @@ function canBeat(attack, defense, state) {
 function tableRanks(state) {
   const set = new Set();
   for (const pair of state.table) {
-    set.add(parseCard(pair.attack).rank);
-    if (pair.defense) set.add(parseCard(pair.defense).rank);
+    if (!isJoker(pair.attack)) set.add(parseCard(pair.attack).rank);
+    if (pair.defense && !isJoker(pair.defense)) set.add(parseCard(pair.defense).rank);
   }
   return set;
 }
 function undefendedCount(state) { return state.table.filter((p) => !p.defense).length; }
+function hasNonJoker(p) { return p.hand.some((c) => !isJoker(c)); }
 
-// Can this attacker add at least one card right now (table fully defended)?
-function hasAddable(state, idx) {
+// can attacker idx add a card now?
+function hasAddable(state, idx, takeMode) {
   if (idx < 0) return false;
   const p = state.players[idx];
   if (!p || p.out || p.hand.length === 0) return false;
-  if (state.table.length === 0) return idx === state.primaryIndex; // only opener opens
+  if (state.table.length === 0) return idx === state.primaryIndex && hasNonJoker(p);
   if (state.table.length >= state.maxAttacks) return false;
-  const defender = state.players[state.defenderIndex];
-  if (defender.hand.length < 1) return false; // nothing to defend with
+  if (!takeMode && state.players[state.defenderIndex].hand.length < 1) return false;
   const ranks = tableRanks(state);
-  return p.hand.some((c) => ranks.has(parseCard(c).rank));
+  return p.hand.some((c) => !isJoker(c) && ranks.has(parseCard(c).rank));
+}
+
+// who can open this bout (primary, else secondary if primary can't)
+function effectiveOpener(state) {
+  const prim = state.primaryIndex;
+  if (prim >= 0 && !state.players[prim].out && hasNonJoker(state.players[prim])) return prim;
+  const sec = state.secondaryIndex;
+  if (sec >= 0 && !state.players[sec].out && hasNonJoker(state.players[sec])) return sec;
+  return -1;
 }
 
 function canTransfer(state, id) {
   const idx = indexOfId(state, id);
-  if (idx !== state.defenderIndex) return false;
+  if (idx !== state.defenderIndex || state.takeMode) return false;
   if (state.table.length === 0) return false;
   if (!state.table.every((p) => !p.defense)) return false;
+  if (state.table.some((p) => isJoker(p.attack))) return false;
   const attackRanks = new Set(state.table.map((p) => parseCard(p.attack).rank));
   if (attackRanks.size !== 1) return false;
   const rank = [...attackRanks][0];
   const p = state.players[idx];
-  if (!p.hand.some((c) => parseCard(c).rank === rank)) return false;
+  if (!p.hand.some((c) => !isJoker(c) && parseCard(c).rank === rank)) return false;
   const nextIdx = nextActiveIndex(state, state.defenderIndex);
   if (nextIdx === state.defenderIndex) return false;
   return state.players[nextIdx].hand.length >= state.table.length + 1;
+}
+
+function canJokerDefend(state, id) {
+  const idx = indexOfId(state, id);
+  if (idx !== state.defenderIndex || state.takeMode) return false;
+  const p = state.players[idx];
+  const jokers = p.hand.filter(isJoker);
+  if (jokers.length === 0) return false;
+  return state.table.some((pair) => !pair.defense && jokers.some((j) => cardColor(j) === cardColor(pair.attack)));
 }
 
 // ---- legal actions ----
@@ -172,22 +211,31 @@ export function legalActions(state, id) {
   const idx = indexOfId(state, id);
   if (idx < 0 || state.players[idx].out) return [];
 
+  if (state.takeMode) {
+    if (idx === state.defenderIndex) return [];
+    if (idx !== state.primaryIndex && idx !== state.secondaryIndex) return [];
+    if (idx !== state.priorityIndex) return [];
+    const acts = ['done'];
+    if (hasAddable(state, idx, true)) acts.unshift('attack');
+    return acts;
+  }
+
   if (idx === state.defenderIndex) {
     if (undefendedCount(state) > 0) {
       const acts = ['defend', 'take'];
       if (canTransfer(state, id)) acts.push('transfer');
+      if (canJokerDefend(state, id)) acts.push('jokerdefend');
       return acts;
     }
     return [];
   }
 
-  // attacker side
   if (idx !== state.primaryIndex && idx !== state.secondaryIndex) return [];
-  if (state.table.length === 0) return idx === state.primaryIndex ? ['attack'] : [];
-  if (undefendedCount(state) > 0) return []; // wait for defender
+  if (state.table.length === 0) return idx === effectiveOpener(state) ? ['attack'] : [];
+  if (undefendedCount(state) > 0) return [];
   if (idx !== state.priorityIndex) return [];
   const acts = ['done'];
-  if (hasAddable(state, idx)) acts.unshift('attack');
+  if (hasAddable(state, idx, false)) acts.unshift('attack');
   return acts;
 }
 
@@ -202,6 +250,7 @@ export function applyAction(state, id, action) {
   switch (action.type) {
     case 'attack': res = doAttack(state, id, action); break;
     case 'defend': res = doDefend(state, id, action); break;
+    case 'jokerdefend': res = doJokerDefend(state, id, action); break;
     case 'transfer': res = doTransfer(state, id, action); break;
     case 'take': res = doTake(state, id); break;
     case 'done': res = doDone(state, id); break;
@@ -210,7 +259,6 @@ export function applyAction(state, id, action) {
   if (res.ok) { normalizeTurn(state); checkEnd(state); }
   return res;
 }
-
 function fail(error) { return { ok: false, error }; }
 
 function doAttack(state, id, action) {
@@ -220,21 +268,27 @@ function doAttack(state, id, action) {
   const p = state.players[idx];
   const cards = action.cards || [];
   if (cards.length === 0) return fail('No cards selected.');
+  if (cards.some(isJoker)) return fail('Jokers cannot attack.');
   if (!cards.every((c) => p.hand.includes(c))) return fail('You do not hold those cards.');
   const defender = state.players[state.defenderIndex];
 
-  if (state.table.length === 0) {
-    if (idx !== state.primaryIndex) return fail('Only the left player opens the attack.');
+  if (state.takeMode) {
+    if (idx !== state.priorityIndex) return fail('Not your turn to add.');
+    const ranks = tableRanks(state);
+    if (!cards.every((c) => ranks.has(parseCard(c).rank))) return fail('Cards must match a rank on the table.');
+    if (state.table.length + cards.length > state.maxAttacks) return fail('Exceeds maximum.');
+  } else if (state.table.length === 0) {
+    if (idx !== effectiveOpener(state)) return fail('It is not your attack.');
     const ranks = new Set(cards.map((c) => parseCard(c).rank));
     if (ranks.size !== 1) return fail('Opening attack must be one rank.');
-    if (cards.length > defender.hand.length) return fail('Too many cards for the defender to beat.');
-    if (cards.length > state.maxAttacks) return fail('Exceeds maximum attack cards.');
+    if (cards.length > defender.hand.length) return fail('Too many cards for the defender.');
+    if (cards.length > state.maxAttacks) return fail('Exceeds maximum.');
   } else {
     if (undefendedCount(state) > 0) return fail('Wait for the defender.');
     if (idx !== state.priorityIndex) return fail('It is not your turn to attack.');
     const ranks = tableRanks(state);
     if (!cards.every((c) => ranks.has(parseCard(c).rank))) return fail('Cards must match a rank on the table.');
-    if (state.table.length + cards.length > state.maxAttacks) return fail('Exceeds maximum attack cards.');
+    if (state.table.length + cards.length > state.maxAttacks) return fail('Exceeds maximum.');
     if (cards.length > defender.hand.length) return fail('Defender cannot cover that many cards.');
   }
 
@@ -242,49 +296,75 @@ function doAttack(state, id, action) {
     p.hand.splice(p.hand.indexOf(c), 1);
     state.table.push({ attack: c, defense: null, by: id });
   }
+  state.noPlay = 0;
   state.log.push(`${p.name}: ${cards.map(fmt).join(' ')}`);
   return { ok: true };
 }
 
 function doDefend(state, id, action) {
   const idx = indexOfId(state, id);
-  if (idx !== state.defenderIndex) return fail('Only the defender can defend.');
+  if (idx !== state.defenderIndex || state.takeMode) return fail('Cannot defend now.');
   const p = state.players[idx];
   const { attackIndex, card } = action;
+  if (isJoker(card)) return fail('Use the joker move to defend with a joker.');
   const pair = state.table[attackIndex];
   if (!pair) return fail('No such attack card.');
   if (pair.defense) return fail('Already beaten.');
   if (!p.hand.includes(card)) return fail('You do not hold that card.');
   if (!canBeat(pair.attack, card, state)) return fail('That card cannot beat the attack.');
-
   p.hand.splice(p.hand.indexOf(card), 1);
   pair.defense = card;
   state.log.push(`${p.name} beats ${fmt(pair.attack)} with ${fmt(card)}`);
-  // Cleared the table → priority returns to the left player.
   if (undefendedCount(state) === 0) state.priorityIndex = state.primaryIndex;
+  return { ok: true };
+}
+
+// Joker defends one card; all other undefended cards go to the previous player.
+function doJokerDefend(state, id, action) {
+  const idx = indexOfId(state, id);
+  if (idx !== state.defenderIndex || state.takeMode) return fail('Cannot defend now.');
+  const p = state.players[idx];
+  const { attackIndex, card } = action;
+  if (!isJoker(card)) return fail('That is not a joker.');
+  if (!p.hand.includes(card)) return fail('You do not hold that joker.');
+  const pair = state.table[attackIndex];
+  if (!pair || pair.defense) return fail('Pick an undefended card.');
+  if (cardColor(card) !== cardColor(pair.attack)) return fail('Joker colour must match the card.');
+
+  p.hand.splice(p.hand.indexOf(card), 1);
+  pair.defense = card;
+
+  // Push remaining undefended cards to the previous player (the left attacker).
+  const recipient = state.players[state.primaryIndex];
+  const pushed = [];
+  for (const pr of state.table) {
+    if (!pr.defense) { recipient.hand.push(pr.attack); pushed.push(pr.attack); }
+  }
+  state.discardCount += state.table.filter((pr) => pr.defense).reduce((nn) => nn + 2, 0);
+  state.table = [];
+  sortHands(state);
+  state.log.push(`${p.name} jokers ${fmt(pair.attack)}${pushed.length ? ` — ${pushed.length} card(s) to ${recipient.name}` : ''}`);
+  endBout(state, false);
   return { ok: true };
 }
 
 function doTransfer(state, id, action) {
   const idx = indexOfId(state, id);
-  if (idx !== state.defenderIndex) return fail('Only the defender can transfer.');
+  if (idx !== state.defenderIndex || state.takeMode) return fail('Cannot transfer now.');
   if (!canTransfer(state, id)) return fail('Transfer is not allowed now.');
   const p = state.players[idx];
   const cards = action.cards || [];
   const rank = parseCard(state.table[0].attack).rank;
-  if (cards.length === 0) return fail('Select matching card(s) to transfer.');
-  if (!cards.every((c) => p.hand.includes(c) && parseCard(c).rank === rank)) {
+  if (cards.length === 0) return fail('Select matching card(s).');
+  if (!cards.every((c) => !isJoker(c) && p.hand.includes(c) && parseCard(c).rank === rank)) {
     return fail('Transfer cards must match the attack rank.');
   }
-  if (state.table.length + cards.length > state.maxAttacks) return fail('Exceeds maximum attack cards.');
+  if (state.table.length + cards.length > state.maxAttacks) return fail('Exceeds maximum.');
   const nextIdx = nextActiveIndex(state, state.defenderIndex);
   if (state.players[nextIdx].hand.length < state.table.length + cards.length) {
     return fail('Next player cannot cover that many cards.');
   }
-  for (const c of cards) {
-    p.hand.splice(p.hand.indexOf(c), 1);
-    state.table.push({ attack: c, defense: null, by: id });
-  }
+  for (const c of cards) { p.hand.splice(p.hand.indexOf(c), 1); state.table.push({ attack: c, defense: null, by: id }); }
   state.log.push(`${p.name} transfers to ${state.players[nextIdx].name}`);
   state.defenderIndex = nextIdx;
   setRoles(state);
@@ -293,62 +373,90 @@ function doTransfer(state, id, action) {
 
 function doTake(state, id) {
   const idx = indexOfId(state, id);
-  if (idx !== state.defenderIndex) return fail('Only the defender can take.');
+  if (idx !== state.defenderIndex || state.takeMode) return fail('Cannot take now.');
   if (state.table.length === 0) return fail('Nothing to take.');
-  const p = state.players[idx];
-  for (const pair of state.table) { p.hand.push(pair.attack); if (pair.defense) p.hand.push(pair.defense); }
-  state.log.push(`${p.name} takes the cards`);
-  state.table = [];
-  endBout(state, true);
+  // Enter loading mode: neighbours may pile on more before the pickup.
+  state.takeMode = true;
+  state.priorityIndex = state.primaryIndex;
+  state.log.push(`${state.players[idx].name} is taking — neighbours may add cards.`);
   return { ok: true };
+}
+
+function finalizeTake(state) {
+  const taker = state.players[state.defenderIndex];
+  for (const pair of state.table) { taker.hand.push(pair.attack); if (pair.defense) taker.hand.push(pair.defense); }
+  state.table = [];
+  state.takeMode = false;
+  sortHands(state);
+  state.log.push(`${taker.name} picks up the cards.`);
+  endBout(state, true);
 }
 
 function doDone(state, id) {
   const idx = indexOfId(state, id);
   if (idx !== state.priorityIndex) return fail('It is not your turn.');
-  if (state.table.length === 0 || undefendedCount(state) > 0) return fail('Nothing to finish yet.');
-  if (idx === state.primaryIndex && state.secondaryIndex !== -1) {
-    state.priorityIndex = state.secondaryIndex; // yield to the right player
+  if (state.takeMode) {
+    if (state.table.length === 0) return fail('Nothing here.');
+    if (idx === state.primaryIndex && state.secondaryIndex !== -1) { state.priorityIndex = state.secondaryIndex; return { ok: true }; }
+    finalizeTake(state);
     return { ok: true };
   }
+  if (state.table.length === 0 || undefendedCount(state) > 0) return fail('Nothing to finish yet.');
+  if (idx === state.primaryIndex && state.secondaryIndex !== -1) { state.priorityIndex = state.secondaryIndex; return { ok: true }; }
   resolveDefense(state);
   return { ok: true };
 }
 
 function resolveDefense(state) {
-  state.discardCount += state.table.reduce((n, pair) => n + 1 + (pair.defense ? 1 : 0), 0);
+  state.discardCount += state.table.reduce((nn, pair) => nn + 1 + (pair.defense ? 1 : 0), 0);
   state.log.push('Defended — cards discarded.');
   state.table = [];
   endBout(state, false);
 }
 
-// After the table is fully defended, skip attackers who cannot add and
-// resolve the bout if nobody can.
 function normalizeTurn(state) {
   if (state.phase !== 'playing') return;
-  if (state.table.length === 0 || undefendedCount(state) > 0) return;
   let guard = 0;
-  while (guard++ < 6) {
-    const holder = state.priorityIndex;
-    if (hasAddable(state, holder)) return; // wait for their decision
-    if (holder === state.primaryIndex && state.secondaryIndex !== -1) {
-      state.priorityIndex = state.secondaryIndex;
+  while (guard++ < 40) {
+    if (state.takeMode) {
+      const holder = state.priorityIndex;
+      if (hasAddable(state, holder, true)) return;
+      if (holder === state.primaryIndex && state.secondaryIndex !== -1) { state.priorityIndex = state.secondaryIndex; continue; }
+      finalizeTake(state);
+      if (state.phase !== 'playing') return;
+      continue; // new bout (table empty) — re-evaluate
+    }
+    if (state.table.length === 0) {
+      const opener = effectiveOpener(state);
+      if (opener !== -1) { state.priorityIndex = opener; return; }
+      // nobody can open — rotate to the next defender; guard against a full empty loop
+      state.noPlay++;
+      if (state.noPlay > activeCount(state) + 1) { state.phase = 'finished'; state.loserId = null; return; }
+      state.defenderIndex = nextActiveIndex(state, state.defenderIndex);
+      setRoles(state);
       continue;
     }
-    resolveDefense(state); // nobody can add → defence stands
-    return;
+    if (undefendedCount(state) > 0) return; // defender's turn
+    // fully defended
+    const holder = state.priorityIndex;
+    if (hasAddable(state, holder, false)) return;
+    if (holder === state.primaryIndex && state.secondaryIndex !== -1) { state.priorityIndex = state.secondaryIndex; continue; }
+    resolveDefense(state);
+    if (state.phase !== 'playing') return;
+    continue;
   }
 }
 
 function endBout(state, defenderTook) {
   refill(state);
   updateOut(state);
-  if (activeCount(state) <= 1) return; // game will be finalised by checkEnd
+  if (activeCount(state) <= 1) return;
   let newAttacker;
   if (defenderTook) newAttacker = nextActiveIndex(state, state.defenderIndex);
   else newAttacker = state.players[state.defenderIndex].out ? nextActiveIndex(state, state.defenderIndex) : state.defenderIndex;
   state.defenderIndex = nextActiveIndex(state, newAttacker);
   setRoles(state);
+  state.takeMode = false;
 }
 
 function refill(state) {
@@ -383,27 +491,23 @@ function checkEnd(state) {
   }
 }
 
-function fmt(c) { const { rank, suit } = parseCard(c); return `${rank}${SUIT_SYMBOL[suit]}`; }
+function fmt(c) { if (isJoker(c)) return c === RED_JOKER ? '🃏R' : '🃏B'; const { rank, suit } = parseCard(c); return `${rank}${SUIT_SYMBOL[suit]}`; }
 
-// ---- view ----
 export function viewFor(state, id) {
   const undef = undefendedCount(state);
   let toActId;
   if (state.phase !== 'playing') toActId = null;
+  else if (state.takeMode) toActId = state.players[state.priorityIndex]?.id;
   else if (undef > 0) toActId = state.players[state.defenderIndex].id;
-  else if (state.table.length === 0) toActId = state.players[state.primaryIndex].id;
+  else if (state.table.length === 0) { const o = effectiveOpener(state); toActId = o >= 0 ? state.players[o].id : null; }
   else toActId = state.players[state.priorityIndex]?.id;
 
   return {
-    deckSize: state.deckSize,
-    handSize: state.handSize,
-    trumpSuit: state.trumpSuit,
-    trumpCard: state.trumpCard,
-    deckCount: state.deck.length,
-    discardCount: state.discardCount,
+    deckSize: state.deckSize, handSize: state.handSize, trumpSuit: state.trumpSuit, trumpCard: state.trumpCard,
+    deckCount: state.deck.length, discardCount: state.discardCount,
     table: state.table.map((p) => ({ attack: p.attack, defense: p.defense })),
-    phase: state.phase,
-    loserId: state.loserId,
+    phase: state.phase, loserId: state.loserId,
+    takeMode: state.takeMode,
     defenderId: state.players[state.defenderIndex]?.id,
     primaryId: state.players[state.primaryIndex]?.id,
     secondaryId: state.secondaryIndex >= 0 ? state.players[state.secondaryIndex]?.id : null,
@@ -420,4 +524,4 @@ export function viewFor(state, id) {
   };
 }
 
-export const _internals = { canBeat, canTransfer, ranksForDeck, hasAddable, undefendedCount, SUIT_SYMBOL };
+export const _internals = { canBeat, canTransfer, canJokerDefend, hasAddable, undefendedCount, cardColor, isJoker, ranksForDeck, SUIT_SYMBOL };

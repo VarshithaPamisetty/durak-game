@@ -266,6 +266,23 @@ button.ghost {
 .playing-card .corner.bottom { align-self: flex-end; transform: rotate(180deg); }
 .playing-card .pip { text-align: center; font-size: 28px; margin: -7px 0; line-height: 1; }
 .playing-card.trumpcard { box-shadow: 0 0 0 2px var(--gold), 0 2px 6px rgba(0,0,0,0.3); }
+.playing-card.joker {
+  background: linear-gradient(157deg, #1c1430 0%, #2b1d4a 100%); color: #f0e6ff;
+  border: 1px solid #5b46a0;
+}
+.playing-card.joker.red { color: #ffd2dc; }
+.playing-card.joker .pip { font-size: 26px; }
+.playing-card.joker .jlabel { text-align: center; font-size: 8px; letter-spacing: 1.5px; font-weight: 800; opacity: 0.85; margin-top: -4px; }
+.playing-card.joker .corner span { color: #d8d0f0; }
+.playing-card.joker.red { border-color: #a04668; background: linear-gradient(157deg, #2a1330 0%, #46203a 100%); }
+.playing-card.joker.red .corner span { color: #ff7088; }
+.playing-card.joker.red .jlabel { color: #ffd2dc; }
+.pair.targetable { cursor: pointer; }
+.pair.targetable::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 10px;
+  border: 2px solid var(--accent-2); opacity: 0.8; animation: pulse 1.2s ease-in-out infinite;
+}
+.mini-note { color: var(--muted); font-size: 11px; text-align: center; margin: 2px 0 14px; line-height: 1.4; }
 .pair .playing-card { position: absolute; top: 0; left: 0; }
 .pair .attack { transform: rotate(-3deg); }
 .pair .defense { top: 20px; left: 18px; transform: rotate(5deg); }

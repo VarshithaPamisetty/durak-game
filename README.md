@@ -20,6 +20,12 @@ be wrapped into a native iOS/Android app with a tool like Capacitor.
   automatic drawing, turn rotation, and Durak (loser) detection.
 - **Rematch** from the end screen.
 - **Add bot players** in the lobby (host-only) — great for testing or filling seats.
+- **Up to 10 players.** Hand size auto-adjusts to fit the deck for big tables.
+- **2 Jokers** (red + black): a joker beats any card of its own colour. If you're hit
+  with several cards, you can joker **one** of them and the rest are pushed to the
+  player before you.
+- **Load the taker**: when the defender gives up and takes, their two neighbours may
+  pile on more matching cards before the pickup.
 - Polished, game-like UI: card faces, dealing animations, turn glow, avatars, sound
   effects (toggleable), confetti on a win, toast notifications.
 - **Reconnect-friendly**: refresh or lose signal and you rejoin the same seat
