@@ -1,0 +1,19 @@
+{
+  "name": "durak-game",
+  "version": "1.0.0",
+  "description": "Multiplayer Durak (transfer variant) — play with your team across phones and laptops.",
+  "type": "module",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}
