@@ -14,7 +14,8 @@ const SS = {
   room: null,
   selected: new Set(),
   soundOn: true,
-  dealtSig: '',     // signature of last hand to trigger deal animation only on change
+  prevHand: new Set(),      // cards held last render (animate only newly drawn)
+  prevTableCards: new Set(),// table cards last render (animate only new)
   endShown: false,
 };
 
@@ -323,16 +324,17 @@ function renderOpponents(v) {
   others.forEach((p) => {
     const div = document.createElement('div');
     let cls = 'opp';
-    const isAtt = p.id === v.attackerId, isDef = p.id === v.defenderId;
+    const isAtt = p.id === v.primaryId || p.id === v.secondaryId;
+    const isDef = p.id === v.defenderId;
     if (isAtt) cls += ' attacker';
     if (isDef) cls += ' defender';
-    if ((isAtt || isDef) && v.phase === 'playing') cls += ' turn';
+    if (p.id === v.toActId && v.phase === 'playing') cls += ' turn';
     if (p.out) cls += ' out';
     div.className = cls;
 
     const head = document.createElement('div');
     head.className = 'opp-head';
-    head.appendChild(avatarEl(p.name, p.id));
+    head.appendChild(avatarEl(p.isBot ? 'B' : p.name, p.id));
     const nm = document.createElement('span'); nm.className = 'name'; nm.textContent = p.name;
     head.appendChild(nm);
     div.appendChild(head);
@@ -363,12 +365,19 @@ function renderTable(v) {
   const amDefender = v.you === v.defenderId;
   const canDefendNow = amDefender && SS.selected.size === 1 && isDefenseSelection(v);
 
+  const seen = new Set();
   v.table.forEach((pair, i) => {
     const wrap = document.createElement('div');
     wrap.className = 'pair' + (pair.defense ? ' beaten' : '');
-    const a = cardEl(pair.attack); a.classList.add('attack'); wrap.appendChild(a);
+    const a = cardEl(pair.attack); a.classList.add('attack');
+    if (!SS.prevTableCards.has(pair.attack)) a.classList.add('enter');
+    wrap.appendChild(a);
+    seen.add(pair.attack);
     if (pair.defense) {
-      const d = cardEl(pair.defense); d.classList.add('defense'); wrap.appendChild(d);
+      const d = cardEl(pair.defense); d.classList.add('defense');
+      if (!SS.prevTableCards.has(pair.defense)) d.classList.add('enter');
+      wrap.appendChild(d);
+      seen.add(pair.defense);
     } else if (canDefendNow) {
       wrap.style.cursor = 'pointer';
       wrap.onclick = () => {
@@ -379,12 +388,15 @@ function renderTable(v) {
     }
     pairs.appendChild(wrap);
   });
+  SS.prevTableCards = seen;
 
   if (v.table.length === 0) {
-    msg.textContent = v.you === v.attackerId ? 'Your attack — pick same-rank card(s), then Attack'
-      : `${nameOf(v, v.attackerId)} is about to attack…`;
+    msg.textContent = v.toActId === v.you ? 'Your attack — pick same-rank card(s), then Attack'
+      : `${nameOf(v, v.toActId)} is about to attack…`;
   } else if (canDefendNow) {
     msg.textContent = 'Tap an attacking card to beat it';
+  } else if (v.toActId && v.toActId !== v.you) {
+    msg.textContent = `Waiting for ${nameOf(v, v.toActId)}…`;
   } else { msg.textContent = ''; }
 }
 
@@ -397,11 +409,16 @@ function isDefenseSelection(v) {
 
 function renderStatus(v) {
   let txt = '';
-  if (v.phase !== 'playing') txt = '';
-  else if (v.you === v.defenderId) txt = 'You are defending';
-  else if (v.you === v.attackerId) txt = 'Your attack';
-  else if (v.defenderId === v.you) txt = '';
-  else txt = `${nameOf(v, v.attackerId)} attacks ${nameOf(v, v.defenderId)}`;
+  if (v.phase !== 'playing') { document.getElementById('status').textContent = ''; return; }
+  if (v.you === v.defenderId) {
+    txt = 'You are defending';
+  } else if (v.you === v.toActId) {
+    txt = v.table.length === 0 ? 'Your attack' : 'Your turn — add a card or Done';
+  } else if (v.you === v.primaryId || v.you === v.secondaryId) {
+    txt = `Waiting for ${nameOf(v, v.toActId)}…`;
+  } else {
+    txt = `${nameOf(v, v.toActId)}'s turn`;
+  }
   document.getElementById('status').textContent = txt;
 }
 
@@ -452,10 +469,10 @@ function renderHand(v) {
   if (!me || !me.hand) { hand.innerHTML = ''; return; }
 
   const sig = me.hand.join(',');
-  const animate = sig !== SS.dealtSig;
-  SS.dealtSig = sig;
+  const newCards = me.hand.filter((c) => !SS.prevHand.has(c));
+  const grew = newCards.length > 0;
 
-  // Determine which ranks are currently "active" so we can dim non-playable cards.
+  // determine which ranks are currently "active" so we can dim non-playable cards.
   const selRank = SS.selected.size ? parseCard([...SS.selected][0]).rank : null;
   const amDefender = v.you === v.defenderId;
   const defending = amDefender && v.table.some((p) => !p.defense);
@@ -465,29 +482,29 @@ function renderHand(v) {
   const mid = (n - 1) / 2;
 
   hand.innerHTML = '';
+  let animIdx = 0;
   me.hand.forEach((card, i) => {
     const el = cardEl(card);
     const { suit, rank } = parseCard(card);
     if (suit === v.trumpSuit) el.classList.add('trumpcard');
 
-    // gentle fan
     const off = i - mid;
     el.style.setProperty('--rot', (off * spread).toFixed(2) + 'deg');
     el.style.setProperty('--ty', Math.min(14, Math.abs(off) * Math.abs(off) * 0.8).toFixed(1) + 'px');
 
     if (SS.selected.has(card)) el.classList.add('selected');
-    // Dim cards that can't combine with the current selection (attacking/throwing same-rank).
     if (selRank && !defending && rank !== selRank && !SS.selected.has(card)) el.classList.add('dimmed');
 
-    if (animate) { el.classList.add('anim'); el.style.animationDelay = (i * 0.045) + 's'; }
+    // Only animate cards that are newly drawn (not a full re-deal every update).
+    if (!SS.prevHand.has(card)) { el.classList.add('anim'); el.style.animationDelay = (animIdx++ * 0.05) + 's'; }
+
     el.onclick = () => toggleSelect(card, v);
     hand.appendChild(el);
   });
 
-  // Compress the fan so every card stays on screen (no edge cut-off).
   fitHand();
-
-  if (animate && n) sound('deal');
+  SS.prevHand = new Set(me.hand);
+  if (grew && SS.endShown === false && SS.justDealt !== sig) { sound('deal'); SS.justDealt = sig; }
 }
 
 function fitHand() {
@@ -618,7 +635,15 @@ document.getElementById('lobby-code').onclick = copyCode;
 document.getElementById('game-code').onclick = copyCode;
 document.getElementById('btn-leave-lobby').onclick = leave;
 document.getElementById('btn-leave-game').onclick = leave;
-function leave() { send('leave'); clearSession(); SS.code = null; SS.playerId = null; location.reload(); }
+function leave() {
+  try { send('leave'); } catch {}
+  clearSession();
+  SS.code = null; SS.playerId = null; SS.view = null; SS.room = null;
+  SS.selected.clear(); SS.prevHand = new Set(); SS.prevTableCards = new Set(); SS.endShown = false;
+  hideConfetti();
+  document.getElementById('overlay').classList.remove('active');
+  showScreen('home');
+}
 
 // ---------- boot ----------
 async function boot() {

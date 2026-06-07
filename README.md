@@ -136,6 +136,11 @@ npx localtunnel --port 3000
 
 - Goal: **don't be the last player holding cards** — that player is the *Durak* (fool).
 - The **attacker** plays one or more cards of the same rank at the **defender**.
+- Only the defender's **two neighbours** attack: the **left** player opens and has
+  **priority** (first right to throw in after each beat); the **right** player may
+  attack only after the left player presses **Done**, and can add several matching
+  cards at once. Priority returns to the left player each time the defender beats the
+  table clean. Turns are strictly one-at-a-time.
 - The **defender** either:
   - **Beats** each attacking card (higher card of the same suit, or any trump; a trump
     is only beaten by a higher trump), then presses nothing — attackers may throw in

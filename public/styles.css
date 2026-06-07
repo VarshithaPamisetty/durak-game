@@ -217,7 +217,9 @@ button.ghost {
   box-shadow: inset 0 2px 20px rgba(0,0,0,0.3);
 }
 .pairs { display: flex; flex-wrap: wrap; gap: 14px 16px; justify-content: center; align-items: center; max-width: 100%; }
-.pair { position: relative; width: var(--card-w); height: calc(var(--card-h) + 18px); animation: dropIn 0.3s cubic-bezier(.2,.8,.3,1.2); }
+.pair { position: relative; width: var(--card-w); height: calc(var(--card-h) + 18px); }
+.pair .attack.enter { animation: dropIn 0.28s cubic-bezier(.2,.8,.3,1.15); }
+.pair .defense.enter { animation: beatIn 0.26s ease; }
 .table-msg { position: absolute; bottom: 8px; left: 0; right: 0; text-align: center; color: var(--muted); font-size: 12px; pointer-events: none; }
 
 .piles { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; }
@@ -332,6 +334,7 @@ button.ghost {
 @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
 @keyframes dealIn { from { opacity: 0; transform: translateY(48px) scale(0.9); } to { opacity: 1; } }
 @keyframes dropIn { from { opacity: 0; transform: translateY(-30px) scale(0.8); } to { opacity: 1; } }
+@keyframes beatIn { from { opacity: 0; transform: translate(6px, -10px) rotate(-6deg); } to { opacity: 1; } }
 @keyframes pulse { 0%,100% { opacity: 0.25; } 50% { opacity: 0.9; } }
 @keyframes pop { from { transform: scale(0.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes toastIn { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; } }
