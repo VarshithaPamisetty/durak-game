@@ -1,7 +1,7 @@
 :root {
-  --felt: #0a2f26;
-  --felt-2: #0d4133;
-  --felt-edge: #051c15;
+  --felt: #167a4d;
+  --felt-2: #1f9760;
+  --felt-edge: #0c4f33;
   --panel: #121b18;
   --panel-2: #18241f;
   --panel-3: #21332c;
@@ -207,8 +207,8 @@ button.ghost {
 .mini-cards { display: flex; justify-content: center; margin-top: 4px; height: 22px; }
 .mini-card {
   width: 15px; height: 21px; border-radius: 3px; margin-left: -6px;
-  background: repeating-linear-gradient(45deg,#5c1620,#5c1620 3px,#74202c 3px,#74202c 6px);
-  border: 1px solid #3f0f17;
+  background: repeating-linear-gradient(45deg,#2f4ba0,#2f4ba0 3px,#4060c4 3px,#4060c4 6px);
+  border: 1px solid #f4f5f0;
 }
 .mini-card:first-child { margin-left: 0; }
 
@@ -231,26 +231,24 @@ button.ghost {
 .piles { left: 10px; }
 .piles.right { left: auto; right: 10px; }
 
-/* Trump card shown face-up and fully visible; the deck peeks out behind it. */
-.deck-pile { position: relative; width: calc(var(--card-w) * 1.5); height: calc(var(--card-h) + 14px); }
-.trump-under { position: absolute; left: 0; top: 7px; z-index: 3; width: var(--card-w); height: var(--card-h); }
+/* Deck: face-down vertical stack with the trump card tucked horizontally beneath it. */
+.deck-pile { position: relative; width: var(--card-h); height: calc(var(--card-w) + var(--card-h) - 14px); }
+.trump-under { position: absolute; top: 0; left: 0; z-index: 1; width: var(--card-h); height: var(--card-w); }
 .trump-under .playing-card {
-  width: var(--card-w); height: var(--card-h);
-  box-shadow: 0 0 0 2px var(--gold), 0 4px 10px rgba(0,0,0,0.45);
+  position: absolute; left: 50%; top: 50%; width: var(--card-w); height: var(--card-h);
+  transform: translate(-50%, -50%) rotate(90deg); box-shadow: 0 0 0 2px var(--gold), 0 3px 8px rgba(0,0,0,0.45);
 }
 .deck-stack {
-  position: absolute; right: 0; top: 0; z-index: 1; width: var(--card-w); height: var(--card-h); border-radius: 8px;
+  position: absolute; left: 50%; transform: translateX(-50%); top: calc(var(--card-w) - 16px); z-index: 2;
+  width: var(--card-w); height: var(--card-h); border-radius: 7px;
   background:
-    linear-gradient(135deg, rgba(0,0,0,0.18), rgba(255,255,255,0.05)),
-    repeating-linear-gradient(45deg, #5c1620, #5c1620 5px, #74202c 5px, #74202c 10px);
-  border: 1px solid #3f0f17; box-shadow: 2px 2px 0 rgba(63,15,23,0.55), var(--shadow-sm);
+    linear-gradient(135deg, rgba(255,255,255,0.08), rgba(0,0,0,0.18)),
+    repeating-linear-gradient(45deg, #2f4ba0, #2f4ba0 5px, #4060c4 5px, #4060c4 10px);
+  border: 2px solid #f4f5f0; box-shadow: 0 3px 8px rgba(0,0,0,0.4);
 }
-.deck-stack::after { content: ""; position: absolute; inset: 5px; border-radius: 5px; border: 1px solid rgba(228,199,129,0.4); }
+.deck-stack::after { content: ""; position: absolute; inset: 5px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.45); }
 .deck-pile.empty .deck-stack { display: none; }
-.deck-pile.empty .trump-under { left: calc(var(--card-w) * 0.25); }
-.deck-pile .pile-count {
-  position: absolute; right: calc(var(--card-w) / 2); transform: translateX(50%); bottom: -9px;
-}
+.deck-pile .pile-count { position: absolute; left: 50%; transform: translateX(-50%); bottom: -10px; }
 .discard-pile { position: relative; width: var(--card-w); height: var(--card-h); opacity: 0.8; }
 .discard-pile::before { content: ""; position: absolute; inset: 0; border-radius: 8px; border: 2px dashed rgba(255,255,255,0.16); }
 .pile-count {
@@ -261,31 +259,33 @@ button.ghost {
 
 /* ---------- cards ---------- */
 .playing-card {
-  width: var(--card-w); height: var(--card-h); border-radius: 9px;
-  background: linear-gradient(157deg, #ffffff 0%, #f4f5f0 100%); color: #15171a;
-  border: 1px solid #c7c9bf; box-shadow: 0 2px 5px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.9);
-  display: flex; flex-direction: column; justify-content: space-between; padding: 5px 6px;
-  font-weight: 700; position: relative;
+  width: var(--card-w); height: var(--card-h); border-radius: 7px;
+  background: #fbfbf7; color: #1a1a1a;
+  border: 1px solid #c7c9bf; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  position: relative; overflow: hidden;
 }
-.playing-card.red { color: #c62b3c; }
-.playing-card .corner { font-size: 15px; line-height: 0.92; display: flex; flex-direction: column; align-items: center; width: fit-content; font-weight: 800; }
-.playing-card .corner .s { font-size: 12px; margin-top: -1px; }
-.playing-card .corner.bottom { align-self: flex-end; transform: rotate(180deg); }
-.playing-card .pip { text-align: center; font-size: 28px; margin: -7px 0; line-height: 1; }
-.playing-card.trumpcard { box-shadow: 0 0 0 2px var(--gold), 0 2px 6px rgba(0,0,0,0.3); }
-.playing-card.joker {
-  border-width: 2px; color: #fff;
+.playing-card.red { color: #d11f35; }
+.playing-card .ci { position: absolute; font-weight: 800; line-height: 0.82; text-align: center; font-size: 14px; }
+.playing-card .ci i { display: block; font-style: normal; font-size: 11px; }
+.playing-card .ci.tl { top: 2px; left: 3px; }
+.playing-card .ci.br { bottom: 2px; right: 3px; transform: rotate(180deg); }
+.playing-card .pips { position: absolute; top: 14%; bottom: 14%; left: 24%; right: 24%; }
+.playing-card .pip { position: absolute; transform: translate(-50%, -50%); font-size: 15px; line-height: 1; }
+.playing-card .pip-a { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 38px; }
+.playing-card .court {
+  position: absolute; inset: 18% 14%; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  font-size: 16px; font-weight: 800;
+  border: 1.5px solid currentColor; border-radius: 4px; padding: 3px 0; opacity: 0.92;
 }
-.playing-card.joker .pip { font-size: 26px; }
-.playing-card.joker .jlabel { text-align: center; font-size: 9px; letter-spacing: 1.5px; font-weight: 900; margin-top: -4px; }
-.playing-card.joker.jr {
-  background: linear-gradient(157deg, #b51d33 0%, #7d1020 100%); border-color: #ff9aa8;
-}
-.playing-card.joker.jr .corner span, .playing-card.joker.jr .jlabel { color: #ffe2e7; }
-.playing-card.joker.jb {
-  background: linear-gradient(157deg, #2a2f3a 0%, #11151c 100%); border-color: #9fb0c4;
-}
-.playing-card.joker.jb .corner span, .playing-card.joker.jb .jlabel { color: #e7eef6; }
+.playing-card .court b { font-size: 24px; }
+.playing-card.trumpcard { box-shadow: 0 0 0 2px var(--gold), 0 1px 3px rgba(0,0,0,0.3); }
+.playing-card.joker { border-width: 2px; color: #fff; }
+.playing-card.joker .pip-a { font-size: 26px; }
+.playing-card.joker .jlabel { position: absolute; left: 0; right: 0; bottom: 22%; text-align: center; font-size: 9px; letter-spacing: 1.5px; font-weight: 900; }
+.playing-card.joker.jr { background: linear-gradient(157deg, #b51d33 0%, #7d1020 100%); border-color: #ff9aa8; }
+.playing-card.joker.jr .ci, .playing-card.joker.jr .jlabel { color: #ffe2e7; }
+.playing-card.joker.jb { background: linear-gradient(157deg, #2a2f3a 0%, #11151c 100%); border-color: #9fb0c4; }
+.playing-card.joker.jb .ci, .playing-card.joker.jb .jlabel { color: #e7eef6; }
 .pair.targetable { cursor: pointer; }
 .pair.targetable::after {
   content: ""; position: absolute; inset: -4px; border-radius: 10px;
@@ -304,24 +304,23 @@ button.ghost {
 .pair.beaten .attack { filter: brightness(0.9); }
 
 /* ---------- hand ---------- */
-.hand-wrap { position: relative; z-index: 1; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 14px 4px 2px; }
+.hand-wrap { position: relative; z-index: 1; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 22px 4px 2px; }
 .hand-wrap::-webkit-scrollbar { height: 0; }
-.hand { display: flex; justify-content: center; align-items: flex-end; min-height: 116px; padding: 12px 26px 4px; }
+.hand { display: flex; justify-content: center; align-items: flex-end; min-height: 120px; padding: 4px 26px; }
 .hand .playing-card {
-  cursor: pointer; flex: 0 0 auto; margin-left: -16px; transform-origin: bottom center;
-  transform: rotate(var(--rot, 0deg)) translateY(var(--ty, 0px));
-  transition: transform 0.15s cubic-bezier(.2,.7,.3,1), box-shadow 0.15s;
+  cursor: pointer; flex: 0 0 auto; margin-left: -14px; transform-origin: bottom center;
+  transition: transform 0.08s ease;
 }
 .hand .playing-card:first-child { margin-left: 0; }
-.hand .playing-card.anim { animation: dealIn 0.34s backwards; }
-.hand .playing-card:hover { transform: translateY(-14px) scale(1.05); z-index: 7; box-shadow: 0 8px 18px rgba(0,0,0,0.4); }
-.hand .playing-card.selected { transform: translateY(-26px) scale(1.06); box-shadow: 0 0 0 3px var(--gold), 0 10px 22px rgba(0,0,0,0.45); z-index: 8; }
+.hand .playing-card:hover { transform: translateY(-8px); z-index: 7; }
+/* selection lifts straight up (no scale) so neighbouring cards stay fully visible */
+.hand .playing-card.selected { transform: translateY(-28px); box-shadow: 0 0 0 3px var(--gold), 0 8px 16px rgba(0,0,0,0.4); z-index: 9; }
 .hand .playing-card.selected::after {
-  content: "✓"; position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
-  width: 20px; height: 20px; border-radius: 50%; background: var(--gold); color: #2a1d05;
-  font-size: 13px; font-weight: 900; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm);
+  content: "✓"; position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+  width: 19px; height: 19px; border-radius: 50%; background: var(--gold); color: #2a1d05;
+  font-size: 12px; font-weight: 900; display: flex; align-items: center; justify-content: center;
 }
-.hand .playing-card.dimmed { opacity: 0.4; filter: grayscale(0.35); }
+.hand .playing-card.dimmed { opacity: 0.45; }
 
 .status { position: relative; z-index: 1; text-align: center; font-size: 14px; min-height: 20px; color: var(--gold); font-weight: 700; }
 .actions { position: relative; z-index: 1; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; min-height: 46px; align-items: center; }

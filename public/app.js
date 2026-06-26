@@ -508,43 +508,26 @@ function renderHand(v) {
   if (!me || !me.hand) { hand.innerHTML = ''; return; }
 
   const sig = me.hand.join(',');
-  const newCards = me.hand.filter((c) => !SS.prevHand.has(c));
-  const grew = newCards.length > 0;
+  const grew = me.hand.some((c) => !SS.prevHand.has(c));
 
-  // determine which ranks are currently "active" so we can dim non-playable cards.
   const selCard = SS.selected.size ? [...SS.selected][0] : null;
   const selRank = selCard && !isJokerC(selCard) ? parseCard(selCard).rank : null;
-  const amDefender = v.you === v.defenderId;
-  const defending = amDefender && v.table.some((p) => !p.defense);
-
-  const n = me.hand.length;
-  const spread = Math.min(4, 26 / Math.max(n, 1)); // degrees between cards
-  const mid = (n - 1) / 2;
+  const defending = v.you === v.defenderId && v.table.some((p) => !p.defense);
 
   hand.innerHTML = '';
-  let animIdx = 0;
-  me.hand.forEach((card, i) => {
+  me.hand.forEach((card) => {
     const el = cardEl(card);
     const { suit, rank } = parseCard(card);
     if (suit === v.trumpSuit) el.classList.add('trumpcard');
-
-    const off = i - mid;
-    el.style.setProperty('--rot', (off * spread).toFixed(2) + 'deg');
-    el.style.setProperty('--ty', Math.min(14, Math.abs(off) * Math.abs(off) * 0.8).toFixed(1) + 'px');
-
     if (SS.selected.has(card)) el.classList.add('selected');
     if (selRank && !defending && rank !== selRank && !SS.selected.has(card)) el.classList.add('dimmed');
-
-    // Only animate cards that are newly drawn (not a full re-deal every update).
-    if (!SS.prevHand.has(card)) { el.classList.add('anim'); el.style.animationDelay = (animIdx++ * 0.05) + 's'; }
-
     el.onclick = () => toggleSelect(card, v);
     hand.appendChild(el);
   });
 
   fitHand();
   SS.prevHand = new Set(me.hand);
-  if (grew && SS.endShown === false && SS.justDealt !== sig) { sound('deal'); SS.justDealt = sig; }
+  if (grew && SS.justDealt !== sig) { sound('deal'); SS.justDealt = sig; }
 }
 
 function fitHand() {
@@ -607,6 +590,18 @@ const RANKS_BY_DECK = {
   24: ['9', '10', 'J', 'Q', 'K', 'A'],
   20: ['10', 'J', 'Q', 'K', 'A'],
 };
+// Pip positions (x%, y%) within the pip area; pips below the middle are flipped.
+const PIPS = {
+  '2': [[50, 6], [50, 94]],
+  '3': [[50, 6], [50, 50], [50, 94]],
+  '4': [[18, 8], [82, 8], [18, 92], [82, 92]],
+  '5': [[18, 8], [82, 8], [50, 50], [18, 92], [82, 92]],
+  '6': [[18, 8], [82, 8], [18, 50], [82, 50], [18, 92], [82, 92]],
+  '7': [[18, 8], [82, 8], [50, 29], [18, 50], [82, 50], [18, 92], [82, 92]],
+  '8': [[18, 8], [82, 8], [50, 29], [18, 50], [82, 50], [50, 71], [18, 92], [82, 92]],
+  '9': [[18, 6], [82, 6], [18, 37], [82, 37], [50, 50], [18, 63], [82, 63], [18, 94], [82, 94]],
+  '10': [[18, 6], [82, 6], [50, 21], [18, 37], [82, 37], [18, 63], [82, 63], [50, 79], [18, 94], [82, 94]],
+};
 function canBeatC(attack, defense, trumpSuit, deckSize) {
   if (isJokerC(defense)) return cardColorC(defense) === cardColorC(attack);
   if (isJokerC(attack)) return false;
@@ -629,20 +624,25 @@ function cardEl(id) {
     const el = document.createElement('div');
     const red = id === 'RJ';
     el.className = 'playing-card joker ' + (red ? 'jr' : 'jb');
-    el.innerHTML = `<div class="corner"><span>★</span></div>
-      <div class="pip">🃏</div>
-      <div class="jlabel">${red ? 'RED' : 'BLACK'}</div>
-      <div class="corner bottom"><span>★</span></div>`;
+    el.innerHTML = `<span class="ci tl">★</span><div class="pip-a">🃏</div><div class="jlabel">${red ? 'RED' : 'BLACK'}</div><span class="ci br">★</span>`;
     return el;
   }
   const { rank, suit } = parseCard(id);
   const el = document.createElement('div');
   el.className = 'playing-card' + (RED_SUITS.has(suit) ? ' red' : '');
   const sym = SUIT_SYMBOL[suit];
-  el.innerHTML =
-    `<div class="corner"><span>${rank}</span><span class="s">${sym}</span></div>
-     <div class="pip">${sym}</div>
-     <div class="corner bottom"><span>${rank}</span><span class="s">${sym}</span></div>`;
+  const idx = `<span class="ci tl">${rank}<i>${sym}</i></span><span class="ci br">${rank}<i>${sym}</i></span>`;
+  let center;
+  if (rank === 'J' || rank === 'Q' || rank === 'K') {
+    center = `<div class="court">${sym}<b>${rank}</b>${sym}</div>`;
+  } else if (rank === 'A') {
+    center = `<div class="pip-a">${sym}</div>`;
+  } else {
+    const pos = PIPS[rank] || [];
+    center = '<div class="pips">' + pos.map(([x, y]) =>
+      `<span class="pip" style="left:${x}%;top:${y}%${y > 50 ? ';transform:translate(-50%,-50%) rotate(180deg)' : ''}">${sym}</span>`).join('') + '</div>';
+  }
+  el.innerHTML = idx + center;
   return el;
 }
 function parseCard(id) { return { suit: id.slice(-1), rank: id.slice(0, -1) }; }

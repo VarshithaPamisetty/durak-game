@@ -29,7 +29,7 @@ const wss = new WebSocketServer({ server });
  */
 const rooms = new Map();
 const EMPTY_ROOM_TTL = 1000 * 60 * 10; // keep a disconnected room alive 10 min for reconnects
-const BOT_DELAY = Number(process.env.BOT_DELAY) || 1500; // ms between bot moves
+const BOT_DELAY = Number(process.env.BOT_DELAY) || 900; // ms between bot plays
 
 function makeRoomCode() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no confusing chars
@@ -64,7 +64,7 @@ function scheduleBots(room) {
   if (!bot) return;
   const act = chooseBotAction(room.game, bot.id);
   // Confirmations are quick; real plays (attack/defend/take) are slower so they're visible.
-  const delay = act && act.type === 'done' ? Math.min(550, BOT_DELAY) : BOT_DELAY;
+  const delay = act && act.type === 'done' ? Math.min(350, BOT_DELAY) : BOT_DELAY;
   room.botTimer = setTimeout(() => {
     room.botTimer = null;
     if (!room.game || room.game.phase !== 'playing') return;
