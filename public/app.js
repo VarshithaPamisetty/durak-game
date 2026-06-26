@@ -385,7 +385,7 @@ function renderTable(v) {
       seen.add(pair.defense);
     } else if (defending && sel) {
       const ok = selJoker ? cardColorC(sel) === cardColorC(pair.attack)
-        : canBeatC(sel, pair.attack, v.trumpSuit, v.deckSize);
+        : canBeatC(pair.attack, sel, v.trumpSuit, v.deckSize);
       if (ok) {
         wrap.classList.add('targetable');
         wrap.onclick = () => {
